@@ -192,7 +192,7 @@ process.on('uncaughtException', (error: Error) => {
   process.exit(1);
 });
 
-// Start the server
+// Start the servers
 startServer();
 
 export default app;
