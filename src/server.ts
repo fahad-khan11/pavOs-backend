@@ -186,7 +186,7 @@ process.on('unhandledRejection', (reason: any) => {
   process.exit(1);
 });
 
-// Handle uncaught exceptions
+// Handle uncaught exceptionsddsds
 process.on('uncaughtException', (error: Error) => {
   logger.error('Uncaught Exception:', error);
   process.exit(1);
