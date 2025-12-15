@@ -94,13 +94,51 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
     // Get user's guilds
     const guilds = await discordService.getUserGuilds(tokenData.access_token);
 
-    // For now, use the first guild (or you can let user select)
-    const guild = guilds[0];
+    // ✅ CRITICAL FIX: Filter guilds to only include ones where our bot has access
+    console.log(`📋 User has ${guilds.length} Discord servers`);
+    
+    const botClient = discordBotService.getClient();
+    
+    if (!botClient || !discordBotService.isActive()) {
+      console.error('❌ Discord bot is not running!');
+      errorResponse(
+        res,
+        'Discord bot is not running. Please contact support.',
+        500
+      );
+      return;
+    }
+    
+    const accessibleGuilds = guilds.filter((g: any) => {
+      const hasAccess = botClient.guilds.cache.has(g.id);
+      console.log(`   ${hasAccess ? '✅' : '❌'} ${g.name} (${g.id}) - Bot ${hasAccess ? 'HAS' : 'DOES NOT HAVE'} access`);
+      return hasAccess;
+    });
+
+    if (accessibleGuilds.length === 0) {
+      console.error('❌ Bot does not have access to any of user\'s guilds!');
+      
+      // Generate bot invite URL
+      const botInviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&permissions=275146468368&scope=bot`;
+      
+      errorResponse(
+        res,
+        `Discord bot is not in any of your servers. Please invite the bot first: ${botInviteUrl}`,
+        400
+      );
+      return;
+    }
+
+    console.log(`✅ Found ${accessibleGuilds.length} accessible guilds`);
+
+    // Use the first accessible guild
+    const guild = accessibleGuilds[0];
 
     let guildInfo = null;
     if (guild) {
       try {
         guildInfo = await discordService.getGuild(guild.id);
+        console.log(`✅ Using guild: ${guildInfo.name} (${guild.id})`);
       } catch (err) {
         console.log('Could not fetch guild info, using basic info from OAuth');
         guildInfo = guild;
