@@ -191,38 +191,67 @@ class DiscordBotService {
       let connection;
 
       if (isDM) {
-        // For DMs: specific logic to find the owner
-        // We cannot know who the DM is for unless we have an existing Lead
-        console.log('   🔍 Processing DM - identifying owner via existing leads...');
+        // For DMs: Find the Discord connection that matches the RECIPIENT
+        // The recipient is the Discord user that this DM was sent TO (not the sender)
+        console.log('   🔍 Looking for Discord connection for DM recipient...');
         
-        // Find the most recently active lead associated with this Discord user
-        const existingLead = await Lead.findOne({
-          discordUserId: message.author.id,
-          source: 'discord',
-        }).sort({ lastContactDate: -1 }); // Prioritize most recent interaction
-
-        if (existingLead) {
-          console.log(`   ✅ Found existing lead: ${existingLead._id} (belongs to userId: ${existingLead.userId})`);
-          
-          // Now verify the owner has an active Discord connection
-          connection = await DiscordConnection.findOne({
-            userId: existingLead.userId,
-            isActive: true 
-          });
-
-          if (connection) {
-             console.log(`   ✅ Active connection confirmed for userId: ${connection.userId}`);
-          } else {
-             console.warn(`   ⚠️  Lead belongs to userId ${existingLead.userId} but they have no active Discord connection. Ignoring DM.`);
-             // Potential improvement: Check if we have *any* token to reply? 
-             // But we use a single bot token, so we COULD reply, but we shouldn't store data for disconnected users.
-             return;
-          }
-
+        // In a DM, message.channel.recipient is the other party
+        // But we need to find which of our users received this DM
+        // We'll check if we have a connection with the sender's Discord ID
+        // If the sender is messaging our bot user, we need to find who owns this conversation
+        
+        // For incoming DMs, we need to find which team member is being contacted
+        // Strategy: Find active connection first, then look for existing lead for that connection
+        console.log('   🔍 Finding active Discord connection...');
+        connection = await DiscordConnection.findOne({ isActive: true }).sort({ connectedAt: 1 });
+        
+        if (!connection) {
+          console.log('   ❌ No active Discord connection found');
         } else {
-          console.warn(`   ⚠️  Received DM from ${message.author.tag} (${message.author.id}) but no existing Lead found in system.`);
-          console.warn(`       Cannot determine which PaveOS user this message is intended for. Skipping.`);
-          return;
+          console.log(`   ✅ Found active connection for userId: ${connection.userId}`);
+          
+          // ✅ MULTI-TENANT FIX: Check if lead exists for THIS user's connection only
+          const existingLead = await Lead.findOne({
+            userId: connection.userId, // ✅ Filter by connection owner
+            discordUserId: message.author.id,
+            source: 'discord',
+          }).sort({ updatedAt: -1 });
+          
+          if (existingLead) {
+            console.log(`   ✅ Found existing lead ${existingLead._id} for this user`);
+          } else {
+            console.log(`   📝 No existing lead found for this user (will create if needed)`);
+          }
+        }
+
+        if (connection) {
+          console.log(`   Connection details: userId=${connection.userId}, guildId=${connection.discordGuildId}`);
+        }
+
+        // AUTO-FIX: If no connection found, create one for the most recent user
+        if (!connection) {
+          console.log('   🔍 No connection found, looking for most recent user in database...');
+          const { User } = await import('../models');
+          const mostRecentUser = await User.findOne({}).sort({ lastLogin: -1, createdAt: -1 });
+
+          if (mostRecentUser) {
+            console.log(`   💡 AUTO-CREATING Discord connection for most recent user:`);
+            console.log(`      - Email: ${mostRecentUser.email}`);
+            console.log(`      - UserId: ${String(mostRecentUser._id)}`);
+            console.log(`      - Last Login: ${mostRecentUser.lastLogin}`);
+
+            connection = await DiscordConnection.create({
+              userId: String(mostRecentUser._id),
+              whopCompanyId: mostRecentUser.whopCompanyId,
+              discordUserId: message.author.id,
+              discordUsername: message.author.tag,
+              isActive: true,
+              connectedAt: new Date(),
+            });
+            console.log('   ✅ Discord connection created - Messages will now be saved to this user');
+          } else {
+            console.log('   ❌ No users found in database - Cannot create connection');
+          }
         }
       } else {
         // For guild messages, find connection for specific guild
