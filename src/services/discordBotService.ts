@@ -201,30 +201,27 @@ class DiscordBotService {
         // If the sender is messaging our bot user, we need to find who owns this conversation
         
         // For incoming DMs, we need to find which team member is being contacted
-        // Strategy: Look for existing lead first, then fall back to any active connection
-        const existingLead = await Lead.findOne({
-          discordUserId: message.author.id,
-          source: 'discord',
-        }).sort({ updatedAt: -1 });
+        // Strategy: Find active connection first, then look for existing lead for that connection
+        console.log('   🔍 Finding active Discord connection...');
+        connection = await DiscordConnection.findOne({ isActive: true }).sort({ connectedAt: 1 });
         
-        if (existingLead) {
-          // Found existing lead - use that team member's userId
-          console.log(`   ✅ Found existing lead ${existingLead._id} owned by userId: ${existingLead.userId}`);
-          connection = await DiscordConnection.findOne({
-            userId: existingLead.userId,
-            isActive: true,
-          });
-          
-          if (connection) {
-            console.log(`   ✅ Using connection for lead owner: ${connection.userId}`);
-          }
-        }
-        
-        // If no existing lead, assign to first active connection (default behavior)
         if (!connection) {
-          console.log('   🔍 No existing lead found, using first active connection...');
-          connection = await DiscordConnection.findOne({ isActive: true }).sort({ connectedAt: 1 });
-          console.log(`   ${connection ? '✅' : '❌'} Connection found: ${connection ? `userId=${connection.userId}` : 'None'}`);
+          console.log('   ❌ No active Discord connection found');
+        } else {
+          console.log(`   ✅ Found active connection for userId: ${connection.userId}`);
+          
+          // ✅ MULTI-TENANT FIX: Check if lead exists for THIS user's connection only
+          const existingLead = await Lead.findOne({
+            userId: connection.userId, // ✅ Filter by connection owner
+            discordUserId: message.author.id,
+            source: 'discord',
+          }).sort({ updatedAt: -1 });
+          
+          if (existingLead) {
+            console.log(`   ✅ Found existing lead ${existingLead._id} for this user`);
+          } else {
+            console.log(`   📝 No existing lead found for this user (will create if needed)`);
+          }
         }
 
         if (connection) {
@@ -535,24 +532,20 @@ class DiscordBotService {
       const isDM = message.channel.isDMBased();
       
       if (isDM) {
-        // For DMs, first check if ANY lead exists for this Discord user (across all users)
-        // This ensures we use the same lead regardless of which user account is active
-        console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} (across all users)...`);
+        // ✅ MULTI-TENANT FIX: Only check for leads belonging to THIS user
+        const userIdStr = String(userId);
+        console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} for userId=${userIdStr}...`);
         let existingLead = await Lead.findOne({
+          userId: userIdStr, // ✅ Filter by current user
           discordUserId: message.author.id,
         });
 
         if (existingLead) {
-          console.log(`   ✅ Found existing lead: ${existingLead._id} (${existingLead.name}) for userId=${existingLead.userId}`);
-          // If the lead belongs to a different user, we still use it but update it
-          if (existingLead.userId !== userId) {
-            console.log(`   🔄 Lead belongs to different user (${existingLead.userId}), but reusing it for consistency`);
-          }
+          console.log(`   ✅ Found existing lead: ${existingLead._id} (${existingLead.name})`);
           return existingLead;
         }
 
         // No lead exists, create one for the current user
-        const userIdStr = String(userId); // Ensure userId is a string
         console.log(`   🆕 No existing lead found, creating new lead for userId=${userIdStr}...`);
         
         // Get user's whopCompanyId if available
@@ -595,37 +588,32 @@ class DiscordBotService {
 
         return newLead;
       } else {
-        // For guild messages, first check if ANY lead exists for this Discord user (across all users)
-        // This ensures we use the same lead regardless of which user account is active
-        // Prioritize conversation-created leads over sync-created leads
-        console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} (across all users)...`);
+        // ✅ MULTI-TENANT FIX: Only check for leads belonging to THIS user
+        const userIdStr = String(userId);
+        console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} for userId=${userIdStr}...`);
         
         // First, try to find a lead created from conversation (discord_guild or discord_dm tags)
         let existingLead = await Lead.findOne({
+          userId: userIdStr, // ✅ Filter by current user
           discordUserId: message.author.id,
           tags: { $in: ['discord_guild', 'discord_dm'] },
         }).sort({ createdAt: 1 });
         
         // If no conversation lead exists, fall back to any lead (including sync-created)
         if (!existingLead) {
-          console.log(`   No conversation lead found, looking for any lead...`);
+          console.log(`   No conversation lead found, looking for any lead for this user...`);
           existingLead = await Lead.findOne({
+            userId: userIdStr, // ✅ Filter by current user
             discordUserId: message.author.id,
           }).sort({ createdAt: 1 });
         }
 
         if (existingLead) {
-          console.log(`   ✅ Found existing lead: ${existingLead._id} (${existingLead.name}) for userId=${existingLead.userId}`);
-          // Use the existing lead even if it belongs to a different user
-          // This ensures consistency - all messages for the same Discord user use the same lead
-          if (existingLead.userId !== userId) {
-            console.log(`   🔄 Lead belongs to different user (${existingLead.userId}), but reusing it for consistency`);
-          }
+          console.log(`   ✅ Found existing lead: ${existingLead._id} (${existingLead.name})`);
           return existingLead;
         }
 
         // No lead exists, create one for the connection owner (userId from connection)
-        const userIdStr = String(userId); // This is the connection owner's userId
         console.log(`   🆕 No existing lead found, creating new lead for userId=${userIdStr} (connection owner)...`);
         
         // Get user's whopCompanyId if available
@@ -689,7 +677,11 @@ class DiscordBotService {
         const dmChannel = channel as any; // Type assertion for DM channel
         const recipientId = dmChannel.recipientId || dmChannel.recipient?.id;
         if (recipientId && recipientId !== this.client?.user?.id) {
-          const lead = await Lead.findOne({ discordUserId: recipientId });
+          // ✅ MULTI-TENANT FIX: Filter by userId
+          const lead = await Lead.findOne({ 
+            userId: userId, // ✅ Only find leads for this user
+            discordUserId: recipientId 
+          });
           leadId = lead?._id ? String(lead._id) : undefined;
         }
       }
@@ -730,26 +722,29 @@ async sendDM(discordUserId: string, content: string, creatorUserId: string) {
     sentMessage = await user.send(content);
 
     // Find the lead for this Discord user - prioritize conversation-created leads over sync-created leads
-    // This lead belongs to the Whop user who connected Discord (connection owner)
-    console.log(`🔍 Looking for lead for discordUserId=${discordUserId}...`);
+    // ✅ MULTI-TENANT FIX: Only find leads belonging to the creator (connection owner)
+    console.log(`🔍 Looking for lead for discordUserId=${discordUserId}, creatorUserId=${creatorUserId}...`);
+    
+    const creatorUserIdStr = String(creatorUserId);
     
     // First, try to find a lead created from conversation (discord_guild or discord_dm tags)
     let lead = await Lead.findOne({
+      userId: creatorUserIdStr, // ✅ Filter by creator's userId
       discordUserId: discordUserId,
       tags: { $in: ['discord_guild', 'discord_dm'] },
     }).sort({ createdAt: 1 });
     
     // If no conversation lead exists, fall back to any lead (including sync-created)
     if (!lead) {
-      console.log(`   No conversation lead found, looking for any lead...`);
+      console.log(`   No conversation lead found, looking for any lead for this user...`);
       lead = await Lead.findOne({
+        userId: creatorUserIdStr, // ✅ Filter by creator's userId
         discordUserId: discordUserId,
       }).sort({ createdAt: 1 });
     }
 
     // If no lead exists, create one for the creator (fallback case)
     if (!lead) {
-      const creatorUserIdStr = String(creatorUserId);
       const creatorConnection = await DiscordConnection.findOne({ userId: creatorUserIdStr, isActive: true });
       if (!creatorConnection) {
         console.error(`❌ No active Discord connection found for userId: ${creatorUserIdStr}`);
