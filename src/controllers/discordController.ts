@@ -131,8 +131,39 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
 
     console.log(`✅ Found ${accessibleGuilds.length} accessible guilds`);
 
-    // Use the first accessible guild
-    const guild = accessibleGuilds[0];
+    // ✅ FIXED: Prioritize guilds where user is OWNER or has ADMIN permissions
+    // This prevents connecting to servers owned by other users
+    const OWNER_PERMISSION = 0x1; // 1 << 0
+    const ADMINISTRATOR_PERMISSION = 0x8; // 1 << 3
+    
+    // Sort guilds: Owner first, then Admin, then others
+    const sortedGuilds = accessibleGuilds.sort((a: any, b: any) => {
+      const aIsOwner = a.owner === true;
+      const bIsOwner = b.owner === true;
+      
+      if (aIsOwner && !bIsOwner) return -1;
+      if (!aIsOwner && bIsOwner) return 1;
+      
+      const aIsAdmin = (parseInt(a.permissions || '0') & ADMINISTRATOR_PERMISSION) !== 0;
+      const bIsAdmin = (parseInt(b.permissions || '0') & ADMINISTRATOR_PERMISSION) !== 0;
+      
+      if (aIsAdmin && !bIsAdmin) return -1;
+      if (!aIsAdmin && bIsAdmin) return 1;
+      
+      return 0;
+    });
+
+    // Use the best guild (owner > admin > member)
+    const guild = sortedGuilds[0];
+    
+    console.log(`🎯 Selected guild: ${guild.name} (Owner: ${guild.owner}, Admin: ${(parseInt(guild.permissions || '0') & ADMINISTRATOR_PERMISSION) !== 0})`);
+    console.log('\n📋 All accessible guilds (sorted by priority):');
+    sortedGuilds.forEach((g: any, idx: number) => {
+      const isOwner = g.owner === true;
+      const isAdmin = (parseInt(g.permissions || '0') & ADMINISTRATOR_PERMISSION) !== 0;
+      const role = isOwner ? '👑 Owner' : isAdmin ? '🛡️ Admin' : '👤 Member';
+      console.log(`   ${idx + 1}. ${g.name} - ${role}`);
+    });
 
     let guildInfo = null;
     if (guild) {
@@ -252,14 +283,128 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
       },
     });
 
-    // Redirect to frontend callback page with success
-    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/integrations/discord/callback?success=true`;
-    res.redirect(redirectUrl);
+    // ✅ FIX: Close the OAuth popup window instead of redirecting
+    // This prevents breaking out of the Whop iframe
+    const successHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Discord Connected</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              height: 100vh;
+              margin: 0;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+            }
+            .container {
+              text-align: center;
+              padding: 2rem;
+            }
+            .success-icon {
+              font-size: 4rem;
+              margin-bottom: 1rem;
+            }
+            h1 {
+              font-size: 2rem;
+              margin-bottom: 0.5rem;
+            }
+            p {
+              font-size: 1.1rem;
+              opacity: 0.9;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="success-icon">✅</div>
+            <h1>Discord Connected!</h1>
+            <p>You can close this window and return to your dashboard.</p>
+          </div>
+          <script>
+            // Send success message to parent window
+            if (window.opener) {
+              window.opener.postMessage({ type: 'discord-connected', success: true }, '*');
+              setTimeout(() => window.close(), 2000);
+            } else {
+              // If not in popup, redirect back to dashboard
+              setTimeout(() => {
+                window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard';
+              }, 2000);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+    res.send(successHtml);
   } catch (error: any) {
     console.error('Discord OAuth callback error:', error);
-    // Redirect to frontend callback page with error
-    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/integrations/discord/callback?error=${encodeURIComponent(error.message || 'Failed to connect Discord')}`;
-    res.redirect(redirectUrl);
+    
+    // Send error page that closes the popup
+    const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Discord Connection Failed</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              height: 100vh;
+              margin: 0;
+              background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+              color: white;
+            }
+            .container {
+              text-align: center;
+              padding: 2rem;
+            }
+            .error-icon {
+              font-size: 4rem;
+              margin-bottom: 1rem;
+            }
+            h1 {
+              font-size: 2rem;
+              margin-bottom: 0.5rem;
+            }
+            p {
+              font-size: 1.1rem;
+              opacity: 0.9;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="error-icon">❌</div>
+            <h1>Connection Failed</h1>
+            <p>${error.message || 'Failed to connect Discord'}</p>
+            <p style="font-size: 0.9rem; margin-top: 1rem;">You can close this window and try again.</p>
+          </div>
+          <script>
+            // Send error message to parent window
+            if (window.opener) {
+              window.opener.postMessage({ 
+                type: 'discord-connected', 
+                success: false, 
+                error: '${error.message || 'Failed to connect Discord'}' 
+              }, '*');
+              setTimeout(() => window.close(), 3000);
+            } else {
+              setTimeout(() => {
+                window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard';
+              }, 3000);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+    res.send(errorHtml);
   }
 };
 
@@ -347,11 +492,25 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
           continue;
         }
 
-        // Check if lead already exists
+        // ✅ FIXED: Check if lead already exists for THIS user AND this Discord user
+        // This prevents creating duplicate leads when multiple users connect to same guild
         const existingLead = await Lead.findOne({
-          userId,
-          discordUserId: member.user.id,
+          userId,  // Only this user's leads
+          discordUserId: member.user.id,  // For this Discord member
         });
+        
+        // ✅ SECURITY: Also check if this Discord user belongs to a DIFFERENT user
+        // If someone else already owns this lead, skip it to prevent conflicts
+        const leadOwnedByOtherUser = await Lead.findOne({
+          userId: { $ne: userId },  // Different user
+          discordUserId: member.user.id,  // Same Discord member
+        });
+        
+        if (leadOwnedByOtherUser) {
+          console.log(`⚠️  Skipping ${member.user.username} - already owned by another user`);
+          skippedCount++;
+          continue;
+        }
 
         const leadData: any = {
           userId,
