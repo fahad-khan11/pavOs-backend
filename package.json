@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
-    "build": "tsc && tsc-alias",    
+    "build": "tsc && tsc-alias",
     "start": "node dist/server.js",
     "seed": "ts-node --esm scripts/seedDemo.ts",
     "seed:templates": "ts-node --esm src/scripts/seedTemplates.ts",
@@ -39,7 +39,6 @@
     "date-fns": "^4.1.0",
     "discord-oauth2": "^2.12.1",
     "discord.js": "^14.24.2",
-    "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-async-errors": "^3.1.1",
     "express-rate-limit": "^7.5.0",
