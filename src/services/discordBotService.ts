@@ -284,9 +284,11 @@ class DiscordBotService {
       console.log(`   👤 Checking/creating lead for userId: ${connectionUserId}...`);
       const lead = await this.checkAndCreateLead(message, connectionUserId);
 
-      // Save message to database with leadId
-      console.log(`   💾 Saving message to database...`);
-      await this.saveMessage(message, connectionUserId, 'incoming', lead ? String(lead._id) : undefined);
+      // ✅ FIXED: Save message with the LEAD's userId, not the connection's userId
+      // This ensures messages are owned by the lead owner, not whoever's bot received it
+      const messageUserId = lead ? String(lead.userId) : connectionUserId;
+      console.log(`   💾 Saving message to database with userId: ${messageUserId}...`);
+      await this.saveMessage(message, messageUserId, 'incoming', lead ? String(lead._id) : undefined);
 
       console.log('   ✅ Message processing complete\n');
 
@@ -532,6 +534,20 @@ class DiscordBotService {
       const isDM = message.channel.isDMBased();
       
       if (isDM) {
+        // ✅ CRITICAL FIX: Check if the message sender is ALREADY a user of our app
+        // If they have their own Discord connection, they should NOT be a lead for someone else!
+        const senderConnection = await DiscordConnection.findOne({
+          discordUserId: message.author.id,
+          isActive: true,
+        });
+        
+        if (senderConnection) {
+          console.log(`   ⚠️  Message sender ${message.author.tag} is ALREADY a user (userId: ${senderConnection.userId})`);
+          console.log(`   ⚠️  This is a conversation between TWO app users - skipping lead creation`);
+          console.log(`   💡 Both users should message each other through the app, not directly on Discord`);
+          return null; // Don't create a lead for another app user
+        }
+        
         // ✅ MULTI-TENANT FIX: Only check for leads belonging to THIS user
         const userIdStr = String(userId);
         console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} for userId=${userIdStr}...`);
