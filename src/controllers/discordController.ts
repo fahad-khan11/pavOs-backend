@@ -283,7 +283,7 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
       },
     });
 
-    // ✅ FIX: Close the OAuth popup window instead of redirecting
+    // ✅ FIX: Close the OAuth popup window instead of redirectingg
     // This prevents breaking out of the Whop iframe
     const successHtml = `
       <!DOCTYPE html>
