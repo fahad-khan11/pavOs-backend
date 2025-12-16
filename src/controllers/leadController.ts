@@ -118,9 +118,15 @@ export const getLeadById = async (req: AuthRequest, res: Response): Promise<void
     }
 
     // ✅ MULTI-TENANT: Filter by whopCompanyId if user is Whop user
+    // For manual leads that don't have whopCompanyId, we allow access by userId only
     const query: any = { _id: id, userId };
     if (whopCompanyId) {
-      query.whopCompanyId = whopCompanyId;
+      // Allow leads with matching whopCompanyId OR no whopCompanyId (legacy/manual leads)
+      query.$or = [
+        { whopCompanyId },
+        { whopCompanyId: { $exists: false } },
+        { whopCompanyId: null }
+      ];
     }
 
     const lead = await Lead.findOne(query);
@@ -158,7 +164,15 @@ export const getLeadById = async (req: AuthRequest, res: Response): Promise<void
 export const createLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.userId!;
-    const leadData = { ...req.body, userId };
+    const whopCompanyId = req.whopCompanyId;
+    
+    const leadData: any = { ...req.body, userId };
+    
+    // ✅ Add whopCompanyId to manual leads if user is a Whop user
+    if (whopCompanyId) {
+      leadData.whopCompanyId = whopCompanyId;
+      console.log(`✅ Adding whopCompanyId to manual lead: ${whopCompanyId}`);
+    }
 
     const lead = await Lead.create(leadData);
 
@@ -185,9 +199,15 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     // ✅ MULTI-TENANT: Filter by whopCompanyId if user is Whop user
+    // For manual leads that don't have whopCompanyId, we allow access by userId only
     const query: any = { _id: id, userId };
     if (whopCompanyId) {
-      query.whopCompanyId = whopCompanyId;
+      // Allow leads with matching whopCompanyId OR no whopCompanyId (legacy/manual leads)
+      query.$or = [
+        { whopCompanyId },
+        { whopCompanyId: { $exists: false } },
+        { whopCompanyId: null }
+      ];
     }
 
     const lead = await Lead.findOne(query);
