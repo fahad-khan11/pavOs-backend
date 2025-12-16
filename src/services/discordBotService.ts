@@ -544,8 +544,21 @@ class DiscordBotService {
       const isDM = message.channel.isDMBased();
       
       if (isDM) {
-        // ✅ CRITICAL FIX: Check if the message sender is ALREADY a user of our app
-        // If they have their own Discord connection, they should NOT be a lead for someone else!
+        // ✅ FIRST: Check if lead already exists for THIS user
+        const userIdStr = String(userId);
+        console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} for userId=${userIdStr}...`);
+        let existingLead = await Lead.findOne({
+          userId: userIdStr,
+          discordUserId: message.author.id,
+        });
+
+        if (existingLead) {
+          console.log(`   ✅ Found existing lead: ${existingLead._id} (${existingLead.name})`);
+          return existingLead;
+        }
+        
+        // ✅ THEN: Check if the message sender is ALREADY a user of our app
+        // Only skip if they're a user AND don't have a lead for current connection owner
         const senderConnection = await DiscordConnection.findOne({
           discordUserId: message.author.id,
           isActive: true,
@@ -556,19 +569,6 @@ class DiscordBotService {
           console.log(`   ⚠️  This is a conversation between TWO app users - skipping lead creation`);
           console.log(`   💡 Both users should message each other through the app, not directly on Discord`);
           return null; // Don't create a lead for another app user
-        }
-        
-        // ✅ MULTI-TENANT FIX: Only check for leads belonging to THIS user
-        const userIdStr = String(userId);
-        console.log(`   🔍 Checking for existing lead by discordUserId=${message.author.id} for userId=${userIdStr}...`);
-        let existingLead = await Lead.findOne({
-          userId: userIdStr, // ✅ Filter by current user
-          discordUserId: message.author.id,
-        });
-
-        if (existingLead) {
-          console.log(`   ✅ Found existing lead: ${existingLead._id} (${existingLead.name})`);
-          return existingLead;
         }
 
         // No lead exists, create one for the current user
