@@ -201,11 +201,11 @@ class DiscordBotService {
         // If the sender is messaging our bot user, we need to find who owns this conversation
         
         // For incoming DMs, we need to find which team member is being contacted
-        // Strategy: Find active connection first, then look for existing lead for that connection
+                                                                                                                                                                                                                                                                                            // Strategy: Find active connection first, then look for existing lead for that connection
         console.log('   🔍 Finding active Discord connection...');
         connection = await DiscordConnection.findOne({ isActive: true }).sort({ connectedAt: 1 });
         
-        if (!connection) {
+        if (!connection) {                                                
           console.log('   ❌ No active Discord connection found');
         } else {
           console.log(`   ✅ Found active connection for userId: ${connection.userId}`);
@@ -558,7 +558,7 @@ class DiscordBotService {
         }
         
         // ✅ THEN: Check if the message sender is ALREADY a user of our app
-        // Only skip if they're a user AND don't have a lead for current connection owner
+        // If they are, we still need a lead to store the conversation!
         const senderConnection = await DiscordConnection.findOne({
           discordUserId: message.author.id,
           isActive: true,
@@ -566,9 +566,10 @@ class DiscordBotService {
         
         if (senderConnection) {
           console.log(`   ⚠️  Message sender ${message.author.tag} is ALREADY a user (userId: ${senderConnection.userId})`);
-          console.log(`   ⚠️  This is a conversation between TWO app users - skipping lead creation`);
-          console.log(`   💡 Both users should message each other through the app, not directly on Discord`);
-          return null; // Don't create a lead for another app user
+          console.log(`   ⚠️  This is a conversation between TWO app users`);
+          console.log(`   💡 Creating/using lead for ${userIdStr} to track this conversation`);
+          // Don't return null! We still need a lead to store messages
+          // Just create a lead for the current user (receiver) to track the sender
         }
 
         // No lead exists, create one for the current user
