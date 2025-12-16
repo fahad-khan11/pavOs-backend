@@ -52,6 +52,14 @@ const userSchema = new Schema<IUser>(
     whopCompanyId: {
       type: String,
     },
+    whopAuthorizedUserId: {
+      type: String,
+      sparse: true,
+    },
+    whopRole: {
+      type: String,
+      enum: ['owner', 'admin', 'sales_manager', 'moderator', 'app_manager', 'support', 'manager'],
+    },
     googleId: {
       type: String,
       sparse: true,
