@@ -131,6 +131,39 @@ class WhopService {
   }
 
   /**
+   * Get authorized user information (includes role in company)
+   * This fetches the team member's role for a specific company
+   */
+  async getAuthorizedUser(companyId: string, userId: string): Promise<{ id: string; role: string; user: any } | null> {
+    try {
+      // List all authorized users for the company
+      const authorizedUsers = await this.whop.authorizedUsers.list({
+        company_id: companyId,
+      });
+
+      // Find the authorized user matching the userId
+      const authorizedUser = authorizedUsers.data.find((au: any) => au.user?.id === userId);
+      
+      if (authorizedUser) {
+        console.log(`✅ Found authorized user role: ${authorizedUser.role} for user ${userId} in company ${companyId}`);
+        return authorizedUser;
+      }
+
+      console.log(`⚠️  User ${userId} is not an authorized user in company ${companyId}`);
+      return null;
+    } catch (error: any) {
+      console.error('Whop API Error - Get Authorized User:', {
+        message: error.message,
+        status: error.status,
+        companyId,
+        userId,
+      });
+      // Return null instead of throwing to allow graceful degradation
+      return null;
+    }
+  }
+
+  /**
    * Get payment information for the company
    * ✅ MULTI-TENANT: Now accepts companyId parameter
    */

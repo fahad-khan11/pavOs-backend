@@ -319,37 +319,50 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
     // If name is not provided, fetch it from Whop API
     let userName = name;
     let userEmail = email;
+    let whopRole: string | undefined;
+    let whopAuthorizedUserId: string | undefined;
 
-    if (!userName || !userEmail) {
-      try {
-        console.log(`Fetching user data from Whop API for userId: ${whopUserId}`);
-        const { whopService } = await import('../services/whopService.js');
-        const whopUser = await whopService.getUser(whopUserId);
-        
-        // Whop UserRetrieveResponse may have different property names
-        // Try multiple possible fields for username
-        if (!userName) {
-          userName = (whopUser as any).username || 
-                     (whopUser as any).name || 
-                     (whopUser as any).display_name || 
-                     (whopUser as any).full_name || 
-                     'Whop User';
-          console.log(`Fetched username from Whop: ${userName}`);
-        }
-        
-        // Try multiple possible fields for email
-        if (!userEmail) {
-          userEmail = (whopUser as any).email || 
-                      (whopUser as any).email_address || 
-                      undefined;
-          if (userEmail) {
-            console.log(`Fetched email from Whop: ${userEmail}`);
-          }
-        }
-      } catch (whopError) {
-        console.error('Failed to fetch user from Whop API:', whopError);
-        // Continue with provided data or defaults
+    // Fetch user data and role from Whop API
+    try {
+      console.log(`Fetching user data from Whop API for userId: ${whopUserId}, companyId: ${whopCompanyId}`);
+      const { whopService } = await import('../services/whopService.js');
+      
+      // Get basic user info
+      const whopUser = await whopService.getUser(whopUserId);
+      
+      // Whop UserRetrieveResponse may have different property names
+      // Try multiple possible fields for username
+      if (!userName) {
+        userName = (whopUser as any).username || 
+                   (whopUser as any).name || 
+                   (whopUser as any).display_name || 
+                   (whopUser as any).full_name || 
+                   'Whop User';
+        console.log(`Fetched username from Whop: ${userName}`);
       }
+      
+      // Try multiple possible fields for email
+      if (!userEmail) {
+        userEmail = (whopUser as any).email || 
+                    (whopUser as any).email_address || 
+                    undefined;
+        if (userEmail) {
+          console.log(`Fetched email from Whop: ${userEmail}`);
+        }
+      }
+
+      // 🔐 ROLE-BASED ACCESS CONTROL: Fetch authorized user role
+      const authorizedUser = await whopService.getAuthorizedUser(whopCompanyId, whopUserId);
+      if (authorizedUser) {
+        whopRole = authorizedUser.role;
+        whopAuthorizedUserId = authorizedUser.id;
+        console.log(`🔐 User role in company: ${whopRole} (authorized user ID: ${whopAuthorizedUserId})`);
+      } else {
+        console.log(`⚠️  User ${whopUserId} is not a team member - treating as regular user`);
+      }
+    } catch (whopError) {
+      console.error('Failed to fetch user/role from Whop API:', whopError);
+      // Continue with provided data or defaults
     }
 
     // ✅ MULTI-TENANT FIX: Find user by BOTH whopUserId AND whopCompanyId
@@ -369,9 +382,11 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         subscriptionPlan: 'Pro', // Whop users get Pro plan
         whopUserId,
         whopCompanyId, // Store the specific company ID
+        whopAuthorizedUserId, // Store authorized user ID
+        whopRole, // Store Whop role
       });
 
-      console.log(`✅ Created new user for company ${whopCompanyId}: ${finalName} (${finalEmail})`);
+      console.log(`✅ Created new user for company ${whopCompanyId}: ${finalName} (${finalEmail}) with role: ${whopRole || 'none'}`);
     } else {
       // Update user data if provided and changed
       let needsUpdate = false;
@@ -390,23 +405,38 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         console.log(`Updating user email to: ${userEmail}`);
       }
 
+      // Update Whop role if it changed
+      if (whopRole && user.whopRole !== whopRole) {
+        user.whopRole = whopRole as any;
+        needsUpdate = true;
+        console.log(`🔐 Updating user Whop role to: ${whopRole}`);
+      }
+
+      // Update authorized user ID
+      if (whopAuthorizedUserId && user.whopAuthorizedUserId !== whopAuthorizedUserId) {
+        user.whopAuthorizedUserId = whopAuthorizedUserId;
+        needsUpdate = true;
+      }
+
       if (needsUpdate) {
         await user.save();
-        console.log(`Updated user from Whop: ${user.name} (${user.email})`);
+        console.log(`Updated user from Whop: ${user.name} (${user.email}) with role: ${user.whopRole || 'none'}`);
       }
     }
 
-    // Generate tokens
+    // Generate tokens with Whop role included
     const accessToken = generateAccessToken({
       userId: user._id.toString(),
       email: user.email,
       role: user.role,
+      whopRole: user.whopRole,
     });
 
     const refreshToken = generateRefreshToken({
       userId: user._id.toString(),
       email: user.email,
       role: user.role,
+      whopRole: user.whopRole,
     });
 
     // Save refresh token
@@ -418,7 +448,7 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
     await TelemetryEvent.create({
       userId: user._id.toString(),
       eventType: 'user_login',
-      eventData: { email: user.email, provider: 'whop', whopCompanyId },
+      eventData: { email: user.email, provider: 'whop', whopCompanyId, whopRole: user.whopRole },
     });
 
     // Auto-create or update WhopConnection for this user
@@ -455,6 +485,7 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         name: user.name,
         email: user.email,
         role: user.role,
+        whopRole: user.whopRole,
         subscriptionPlan: user.subscriptionPlan,
       },
     });
