@@ -627,6 +627,11 @@ export const getDiscordMessages = async (req: AuthRequest, res: Response): Promi
 /**
  * Send Discord message
  * POST /api/v1/integrations/discord/send-message
+ * 
+ * ✅ FIXED: Now exclusively uses DMs for reliable message delivery
+ * - DMs work without bot needing to be in the server
+ * - Private conversations with leads
+ * - No permission issues
  */
 export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -635,6 +640,12 @@ export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promi
 
     if (!content) {
       errorResponse(res, 'Message content is required', 400);
+      return;
+    }
+
+    // Validate discordUserId is provided
+    if (!discordUserId) {
+      errorResponse(res, 'discordUserId is required. Messages are sent as DMs only.', 400);
       return;
     }
 
@@ -651,23 +662,25 @@ export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    let sentMessage;
+    // ✅ ALWAYS send as DM for reliability
+    console.log(`📤 Sending DM to Discord user ${discordUserId} from CRM user ${userId}`);
+    const sentMessage = await discordBotService.sendDM(discordUserId, content, userId);
 
-    if (discordUserId) {
-      // Send DM
-      sentMessage = await discordBotService.sendDM(discordUserId, content, userId);
-    } else if (channelId) {
-      // Send to channel
-      sentMessage = await discordBotService.sendMessage(channelId, content, userId);
-    } else {
-      errorResponse(res, 'Either channelId or discordUserId is required', 400);
+    if (!sentMessage) {
+      errorResponse(res, 'Failed to send DM. User may have DMs disabled.', 500);
       return;
     }
 
-    successResponse(res, { message: sentMessage }, 'Message sent successfully');
+    successResponse(res, { message: sentMessage }, 'Message sent successfully via DM');
   } catch (error: any) {
     console.error('Send message error:', error);
-    errorResponse(res, error.message || 'Failed to send message', 500);
+    
+    // Provide helpful error messages
+    if (error.message?.includes('Cannot send messages to this user')) {
+      errorResponse(res, 'Cannot send DM to this user. They may have DMs disabled or blocked the bot.', 400);
+    } else {
+      errorResponse(res, error.message || 'Failed to send message', 500);
+    }
   }
 };
 
