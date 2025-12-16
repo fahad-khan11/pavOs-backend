@@ -7,6 +7,7 @@ import { Document, Types } from 'mongoose';
 
 export type UserRole = 'creator' | 'manager' | 'admin';
 export type SubscriptionPlan = 'Starter' | 'Pro' | 'Agency';
+export type WhopRole = 'owner' | 'admin' | 'sales_manager' | 'moderator' | 'app_manager' | 'support' | 'manager';
 
 export interface IUser extends Document {
   id: string;
@@ -18,6 +19,8 @@ export interface IUser extends Document {
   whopId?: string;
   whopUserId?: string;
   whopCompanyId?: string;
+  whopAuthorizedUserId?: string;
+  whopRole?: WhopRole;
   googleId?: string;
   avatar?: string;
   isEmailVerified?: boolean;
@@ -377,12 +380,14 @@ export interface JWTPayload {
   userId: string;
   email: string;
   role: UserRole;
+  whopRole?: WhopRole;
 }
 
 export interface AuthRequest extends Request {
   user?: JWTPayload | any; // Allow both JWT payload and Passport user
   userId?: string;
   whopCompanyId?: string;  // ✅ Multi-tenant company ID
+  whopRole?: WhopRole;  // 🔐 Whop team member role
 }
 
 // ============================================
