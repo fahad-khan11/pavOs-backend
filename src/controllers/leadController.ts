@@ -28,8 +28,17 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
     const query: any = { userId: String(userId) };
     
     // If user is a Whop user (has whopCompanyId), filter by company
+    // Allow leads with matching whopCompanyId OR no whopCompanyId (legacy/manual leads)
     if (whopCompanyId) {
-      query.whopCompanyId = whopCompanyId;
+      query.$and = [
+        {
+          $or: [
+            { whopCompanyId },
+            { whopCompanyId: { $exists: false } },
+            { whopCompanyId: null }
+          ]
+        }
+      ];
       console.log('✅ Multi-tenant filter applied: whopCompanyId =', whopCompanyId);
     }
 
@@ -136,12 +145,18 @@ export const getLeadById = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    // Get message history for this lead
-    const messages = await DiscordMessage.find({ leadId: id })
+    // ✅ MULTI-TENANT: Get messages filtered by BOTH leadId AND userId (extra security)
+    // This ensures users only see messages that belong to them
+    const messageQuery: any = { 
+      leadId: id,
+      userId: lead.userId  // ✅ Only messages owned by the lead owner
+    };
+    
+    const messages = await DiscordMessage.find(messageQuery)
       .sort({ createdAt: -1 })
       .limit(100);
 
-    console.log(`📨 Found ${messages.length} messages for lead ${id}`);
+    console.log(`📨 Found ${messages.length} messages for lead ${id} (userId: ${lead.userId})`);
     if (messages.length > 0) {
       messages.forEach((msg, idx) => {
         console.log(`   Message ${idx + 1}: direction=${msg.direction}, userId=${msg.userId}, author=${msg.authorUsername}, content="${msg.content.substring(0, 30)}..."`);

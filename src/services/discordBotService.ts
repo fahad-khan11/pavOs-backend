@@ -496,12 +496,22 @@ class DiscordBotService {
       const io = getIO();
 
       if (lead?._id) {
-        io.to(`lead:${String(lead._id)}`).emit("discord:message", {
+        const room = `lead:${String(lead._id)}`;
+        console.log(`📡 Emitting Socket.IO event to room: ${room}`);
+        console.log(`   Message: "${discordMessage.content.substring(0, 30)}..."`);
+        console.log(`   Direction: ${discordMessage.direction}`);
+        console.log(`   LeadId: ${lead._id}`);
+        
+        io.to(room).emit("discord:message", {
           ...discordMessage.toJSON(),
         });
+        
+        console.log(`   ✅ Socket event emitted successfully`);
+      } else {
+        console.log(`   ⚠️  No lead found - skipping socket emit`);
       }
     } catch (socketError) {
-      console.error("Socket.IO emit failed:", socketError);
+      console.error("❌ Socket.IO emit failed:", socketError);
     }
 
     console.log(`💾 Saved message to database: ${message.id}${lead ? ` with leadId: ${String(lead._id)}` : ''}`);
