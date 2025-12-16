@@ -737,6 +737,8 @@ class DiscordBotService {
   /**
    * Send DM to a user
    * Uses the same leadId and userId as the incoming messages (the connection owner)
+   * 
+   * ✅ PRIMARY MESSAGE SENDING METHOD - Reliable and works without server access
    */
 async sendDM(discordUserId: string, content: string, creatorUserId: string) {
   let sentMessage: any = null;
@@ -745,8 +747,32 @@ async sendDM(discordUserId: string, content: string, creatorUserId: string) {
       throw new Error('Bot is not running');
     }
 
-    const user = await this.client.users.fetch(discordUserId);
-    sentMessage = await user.send(content);
+    console.log(`📤 Sending DM to Discord user ${discordUserId}...`);
+    
+    // Fetch the Discord user
+    let user;
+    try {
+      user = await this.client.users.fetch(discordUserId);
+      console.log(`✅ Found Discord user: ${user.tag}`);
+    } catch (fetchError: any) {
+      console.error(`❌ Failed to fetch Discord user ${discordUserId}:`, fetchError.message);
+      throw new Error(`Discord user not found: ${discordUserId}`);
+    }
+
+    // Send the DM
+    try {
+      sentMessage = await user.send(content);
+      console.log(`✅ DM sent successfully to ${user.tag}`);
+    } catch (sendError: any) {
+      console.error(`❌ Failed to send DM to ${user.tag}:`, sendError.message);
+      
+      // Provide helpful error messages
+      if (sendError.code === 50007) {
+        throw new Error('Cannot send messages to this user. They may have DMs disabled or blocked the bot.');
+      } else {
+        throw new Error(`Failed to send DM: ${sendError.message}`);
+      }
+    }
 
     // Find the lead for this Discord user - prioritize conversation-created leads over sync-created leads
     // ✅ MULTI-TENANT FIX: Only find leads belonging to the creator (connection owner)
