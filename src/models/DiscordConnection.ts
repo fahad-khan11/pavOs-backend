@@ -12,6 +12,8 @@ const discordConnectionSchema = new Schema<IDiscordConnection>(
     },
     whopCompanyId: {
       type: String,
+      required: [true, 'Whop Company ID is required'], // Required for multi-tenant isolation
+      unique: true, // One Discord server per Whop company
       index: true,
     },
     discordUserId: {
@@ -22,7 +24,8 @@ const discordConnectionSchema = new Schema<IDiscordConnection>(
     },
     discordGuildId: {
       type: String,
-      index: true, // Index for faster guild lookups
+      unique: true, // One Discord server per connection
+      index: true, // Index for faster guild lookups and deterministic routing
     },
     discordGuildName: {
       type: String,
@@ -39,6 +42,13 @@ const discordConnectionSchema = new Schema<IDiscordConnection>(
       type: String,
       select: false,
     },
+    botInvited: {
+      type: Boolean,
+      default: false, // Track if bot has been invited to the server
+    },
+    botPermissions: {
+      type: String, // Store bot permissions as string
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -53,6 +63,10 @@ const discordConnectionSchema = new Schema<IDiscordConnection>(
     syncedMembersCount: {
       type: Number,
       default: 0,
+    },
+    syncedChannelsCount: {
+      type: Number,
+      default: 0, // Track number of lead channels synced
     },
   },
   {

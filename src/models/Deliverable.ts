@@ -39,6 +39,11 @@ const deliverableSchema = new Schema<IDeliverable>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],
+      index: true,
+    },
     dealId: {
       type: String,
       required: [true, 'Deal ID is required'],
@@ -115,6 +120,7 @@ deliverableSchema.virtual('id').get(function () {
 
 // Indexes
 deliverableSchema.index({ userId: 1, status: 1 });
+deliverableSchema.index({ whopCompanyId: 1, status: 1 });
 deliverableSchema.index({ dealId: 1 });
 deliverableSchema.index({ dueDate: 1 });
 

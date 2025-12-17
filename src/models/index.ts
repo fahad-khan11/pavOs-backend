@@ -12,4 +12,5 @@ export { StripeConnection } from './StripeConnection.js';
 export { WhopConnection } from './WhopConnection.js';
 export { DiscordConnection } from './DiscordConnection.js';
 export { DiscordMessage } from './DiscordMessage.js';
+export { DiscordLeadChannel } from './DiscordLeadChannel.js';
 export { Lead } from './Lead.js';

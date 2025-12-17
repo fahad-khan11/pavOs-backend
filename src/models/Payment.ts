@@ -9,6 +9,11 @@ const paymentSchema = new Schema<IPayment>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],
+      index: true,
+    },
     dealId: {
       type: String,
       ref: 'Deal',
@@ -97,6 +102,7 @@ paymentSchema.virtual('id').get(function () {
 
 // Indexes
 paymentSchema.index({ userId: 1, paymentStatus: 1 });
+paymentSchema.index({ whopCompanyId: 1, paymentStatus: 1 });
 paymentSchema.index({ dealId: 1 });
 paymentSchema.index({ dueDate: 1, paymentStatus: 1 });
 

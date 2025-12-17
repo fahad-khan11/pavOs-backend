@@ -2,17 +2,16 @@ import { Response } from 'express';
 import mongoose from 'mongoose';
 import { AuthRequest } from '../types/index.js';
 import { successResponse, errorResponse } from '../utils/response.js';
-import { Lead, DiscordMessage } from '../models/index.js';
+import { Lead, DiscordMessage, Contact, User } from '../models/index.js';
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get all leads
  * GET /api/v1/leads
  */
 export const getLeads = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const whopCompanyId = req.whopCompanyId;
-    console.log('📋 getLeads - userId:', userId, 'whopCompanyId:', whopCompanyId);
+    const whopCompanyId = req.whopCompanyId!;
     const {
       status,
       source,
@@ -24,23 +23,8 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
       sortOrder = 'desc',
     } = req.query;
 
-    // ✅ MULTI-TENANT: Filter by BOTH userId AND whopCompanyId (Whop requirement)
-    const query: any = { userId: String(userId) };
-    
-    // If user is a Whop user (has whopCompanyId), filter by company
-    // Allow leads with matching whopCompanyId OR no whopCompanyId (legacy/manual leads)
-    if (whopCompanyId) {
-      query.$and = [
-        {
-          $or: [
-            { whopCompanyId },
-            { whopCompanyId: { $exists: false } },
-            { whopCompanyId: null }
-          ]
-        }
-      ];
-      console.log('✅ Multi-tenant filter applied: whopCompanyId =', whopCompanyId);
-    }
+    // ✅ SECURITY: Filter by whopCompanyId ONLY (strict tenant isolation)
+    const query: any = { whopCompanyId };
 
     // Filters
     if (status) query.status = status;
@@ -62,22 +46,12 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
     const sort: any = {};
     sort[String(sortBy)] = sortOrder === 'asc' ? 1 : -1;
 
-    // Debug: Check all leads for this userId before filtering
-    const allLeadsForUser = await Lead.find({ userId: String(userId) });
-    console.log(`📋 getLeads - All leads for userId ${userId}: ${allLeadsForUser.length}`);
-    allLeadsForUser.forEach((lead, idx) => {
-      console.log(`   Lead ${idx + 1}: id=${lead._id}, name=${lead.name}, source=${lead.source}, tags=${lead.tags.join(',')}, userId=${lead.userId} (type: ${typeof lead.userId})`);
-    });
-
     const leads = await Lead.find(query)
       .sort(sort)
       .limit(Number(limit))
       .skip(skip);
 
     const total = await Lead.countDocuments(query);
-
-    console.log(`📋 getLeads - Query:`, JSON.stringify(query, null, 2));
-    console.log(`📋 getLeads - Found ${leads.length} leads (total: ${total}) after filters`);
 
     // Get unread counts for each lead
     const leadsWithUnread = await Promise.all(
@@ -110,15 +84,14 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get single lead by ID
  * GET /api/v1/leads/:id
  */
 export const getLeadById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const whopCompanyId = req.whopCompanyId;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
-    console.log('📄 getLeadById - userId:', userId, 'whopCompanyId:', whopCompanyId, 'leadId:', id);
 
     // Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -126,42 +99,21 @@ export const getLeadById = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    // ✅ MULTI-TENANT: Filter by whopCompanyId if user is Whop user
-    // For manual leads that don't have whopCompanyId, we allow access by userId only
-    const query: any = { _id: id, userId };
-    if (whopCompanyId) {
-      // Allow leads with matching whopCompanyId OR no whopCompanyId (legacy/manual leads)
-      query.$or = [
-        { whopCompanyId },
-        { whopCompanyId: { $exists: false } },
-        { whopCompanyId: null }
-      ];
-    }
-
-    const lead = await Lead.findOne(query);
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
+    const lead = await Lead.findOne({ _id: id, whopCompanyId });
 
     if (!lead) {
       errorResponse(res, 'Lead not found', 404);
       return;
     }
 
-    // ✅ MULTI-TENANT: Get messages filtered by BOTH leadId AND userId (extra security)
-    // This ensures users only see messages that belong to them
-    const messageQuery: any = { 
+    // Get messages for this lead
+    const messages = await DiscordMessage.find({ 
       leadId: id,
-      userId: lead.userId  // ✅ Only messages owned by the lead owner
-    };
-    
-    const messages = await DiscordMessage.find(messageQuery)
+      whopCompanyId  // ✅ Enforce tenant boundary on messages too
+    })
       .sort({ createdAt: -1 })
       .limit(100);
-
-    console.log(`📨 Found ${messages.length} messages for lead ${id} (userId: ${lead.userId})`);
-    if (messages.length > 0) {
-      messages.forEach((msg, idx) => {
-        console.log(`   Message ${idx + 1}: direction=${msg.direction}, userId=${msg.userId}, author=${msg.authorUsername}, content="${msg.content.substring(0, 30)}..."`);
-      });
-    }
 
     successResponse(res, {
       lead,
@@ -173,21 +125,28 @@ export const getLeadById = async (req: AuthRequest, res: Response): Promise<void
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Create new lead
  * POST /api/v1/leads
  */
 export const createLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const whopCompanyId = req.whopCompanyId;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
     
-    const leadData: any = { ...req.body, userId };
-    
-    // ✅ Add whopCompanyId to manual leads if user is a Whop user
-    if (whopCompanyId) {
-      leadData.whopCompanyId = whopCompanyId;
-      console.log(`✅ Adding whopCompanyId to manual lead: ${whopCompanyId}`);
+    // ✅ Resolve internal userId from Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
     }
+    const userId = user._id.toString();
+    
+    const leadData: any = { 
+      ...req.body, 
+      userId,
+      whopCompanyId  // ✅ Always set whopCompanyId for strict tenant isolation
+    };
 
     const lead = await Lead.create(leadData);
 
@@ -198,13 +157,13 @@ export const createLead = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Update lead
  * PATCH /api/v1/leads/:id
  */
 export const updateLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const whopCompanyId = req.whopCompanyId;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
 
     // Validate ObjectId format
@@ -213,19 +172,8 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    // ✅ MULTI-TENANT: Filter by whopCompanyId if user is Whop user
-    // For manual leads that don't have whopCompanyId, we allow access by userId only
-    const query: any = { _id: id, userId };
-    if (whopCompanyId) {
-      // Allow leads with matching whopCompanyId OR no whopCompanyId (legacy/manual leads)
-      query.$or = [
-        { whopCompanyId },
-        { whopCompanyId: { $exists: false } },
-        { whopCompanyId: null }
-      ];
-    }
-
-    const lead = await Lead.findOne(query);
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
+    const lead = await Lead.findOne({ _id: id, whopCompanyId });
 
     if (!lead) {
       errorResponse(res, 'Lead not found', 404);
@@ -242,12 +190,13 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Delete lead
  * DELETE /api/v1/leads/:id
  */
 export const deleteLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
 
     // Validate ObjectId format
@@ -256,7 +205,8 @@ export const deleteLead = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const lead = await Lead.findOneAndDelete({ _id: id, userId });
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
+    const lead = await Lead.findOneAndDelete({ _id: id, whopCompanyId });
 
     if (!lead) {
       errorResponse(res, 'Lead not found', 404);
@@ -270,15 +220,17 @@ export const deleteLead = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get lead statistics
  * GET /api/v1/leads/stats
  */
 export const getLeadStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
 
+    // ✅ SECURITY: Aggregate by whopCompanyId
     const stats = await Lead.aggregate([
-      { $match: { userId } },
+      { $match: { whopCompanyId } },
       {
         $group: {
           _id: '$status',
@@ -289,7 +241,7 @@ export const getLeadStats = async (req: AuthRequest, res: Response): Promise<voi
     ]);
 
     const sourceStats = await Lead.aggregate([
-      { $match: { userId } },
+      { $match: { whopCompanyId } },
       {
         $group: {
           _id: '$source',
@@ -298,7 +250,7 @@ export const getLeadStats = async (req: AuthRequest, res: Response): Promise<voi
       },
     ]);
 
-    const total = await Lead.countDocuments({ userId });
+    const total = await Lead.countDocuments({ whopCompanyId });
 
     successResponse(res, {
       total,

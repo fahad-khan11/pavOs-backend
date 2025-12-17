@@ -10,6 +10,11 @@ const csvImportSchema = new Schema<ICSVImport>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],
+      index: true,
+    },
     fileName: {
       type: String,
       required: [true, 'File name is required'],
@@ -90,6 +95,7 @@ csvImportSchema.virtual('id').get(function () {
 
 // Indexes
 csvImportSchema.index({ userId: 1, createdAt: -1 });
+csvImportSchema.index({ whopCompanyId: 1, status: 1 });
 csvImportSchema.index({ status: 1 });
 
 export const CSVImport = mongoose.model<ICSVImport>('CSVImport', csvImportSchema);

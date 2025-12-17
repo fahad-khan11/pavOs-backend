@@ -4,14 +4,17 @@ import { AuthRequest } from '../types/index.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get current user profile
  * GET /api/v1/users/me
  */
 export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
 
-    const user = await User.findById(userId);
+    // ✅ Resolve user by Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
     if (!user) {
       errorResponse(res, 'User not found', 404);
       return;
@@ -24,12 +27,14 @@ export const getCurrentUser = async (req: AuthRequest, res: Response): Promise<v
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Update current user profile
  * PUT /api/v1/users/me
  */
 export const updateCurrentUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
     const updates = req.body;
 
     // Don't allow updating certain fields
@@ -37,16 +42,20 @@ export const updateCurrentUser = async (req: AuthRequest, res: Response): Promis
     delete updates.password;
     delete updates.role;
     delete updates.refreshTokens;
+    delete updates.whopUserId;
+    delete updates.whopCompanyId;
+    delete updates.whopRole;
 
-    const user = await User.findByIdAndUpdate(userId, updates, {
-      new: true,
-      runValidators: true,
-    });
-
+    // ✅ Resolve user by Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
     if (!user) {
       errorResponse(res, 'User not found', 404);
       return;
     }
+
+    // Update user
+    Object.assign(user, updates);
+    await user.save();
 
     successResponse(res, user.toJSON(), 'Profile updated successfully');
   } catch (error: any) {
@@ -55,14 +64,24 @@ export const updateCurrentUser = async (req: AuthRequest, res: Response): Promis
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Delete current user account
  * DELETE /api/v1/users/me
  */
 export const deleteCurrentUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
 
-    await User.findByIdAndDelete(userId);
+    // ✅ Resolve user by Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+
+    // Delete user
+    await User.findByIdAndDelete(user._id);
 
     successResponse(res, null, 'Account deleted successfully');
   } catch (error: any) {

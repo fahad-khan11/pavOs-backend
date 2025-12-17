@@ -9,6 +9,11 @@ const telemetryEventSchema = new Schema<ITelemetryEvent>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],
+      index: true,
+    },
     eventType: {
       type: String,
       enum: [
@@ -68,6 +73,7 @@ telemetryEventSchema.virtual('id').get(function () {
 
 // Indexes
 telemetryEventSchema.index({ userId: 1, eventType: 1 });
+telemetryEventSchema.index({ whopCompanyId: 1, createdAt: -1 });
 telemetryEventSchema.index({ createdAt: -1 });
 
 export const TelemetryEvent = mongoose.model<ITelemetryEvent>(

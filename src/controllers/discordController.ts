@@ -3,7 +3,14 @@ import { AuthRequest } from '../types/index.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import { discordService } from '../services/discordService.js';
 import { discordBotService } from '../services/discordBotService.js';
-import { DiscordConnection, Lead, Contact, TelemetryEvent, DiscordMessage, User } from '../models/index.js';
+import { DiscordConnection, Lead, Contact, TelemetryEvent, DiscordMessage, User, DiscordLeadChannel } from '../models/index.js';
+import {
+  createLeadChannel,
+  sendMessageToChannel,
+  getLeadChannel,
+  getCompanyChannels,
+  archiveLeadChannel,
+} from '../services/discordChannelService.js';
 
 /**
  * Get Discord connection status
@@ -11,7 +18,17 @@ import { DiscordConnection, Lead, Contact, TelemetryEvent, DiscordMessage, User 
  */
 export const getConnectionStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
 
     const connection = await DiscordConnection.findOne({ userId, isActive: true });
 
@@ -45,7 +62,17 @@ export const getConnectionStatus = async (req: AuthRequest, res: Response): Prom
  */
 export const getOAuthURL = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
     const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
     const url = discordService.generateOAuthURL(state);
 
@@ -275,6 +302,7 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
     // Track telemetry
     await TelemetryEvent.create({
       userId,
+      whopCompanyId,  // ✅ Required field
       eventType: 'discord_connected',
       eventData: {
         guildId: guild?.id,
@@ -414,7 +442,17 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
  */
 export const disconnectDiscord = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
 
     const connection = await DiscordConnection.findOne({ userId });
 
@@ -438,7 +476,17 @@ export const disconnectDiscord = async (req: AuthRequest, res: Response): Promis
  */
 export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
 
     // Check connection
     const connection = await DiscordConnection.findOne({ userId, isActive: true });
@@ -447,9 +495,7 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Get user's whopCompanyId
-    const user = await User.findById(userId);
-    const whopCompanyId = user?.whopCompanyId;
+    // ✅ whopCompanyId already available from earlier user resolution
 
     if (!connection.discordGuildId) {
       errorResponse(res, 'No guild associated with this connection', 400);
@@ -545,6 +591,7 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
           if (createdCount === 1) {
             await TelemetryEvent.create({
               userId,
+              whopCompanyId: whopCompanyId || '',  // ✅ Required field (empty string if not set)
               eventType: 'discord_member_synced',
               eventData: {
                 guildId: connection.discordGuildId,
@@ -593,7 +640,17 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
  */
 export const getDiscordMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
     const { leadId, channelId, isRead, limit = 50, page = 1 } = req.query;
 
     const query: any = { userId };
@@ -628,24 +685,27 @@ export const getDiscordMessages = async (req: AuthRequest, res: Response): Promi
  * Send Discord message
  * POST /api/v1/integrations/discord/send-message
  * 
- * ✅ FIXED: Now exclusively uses DMs for reliable message delivery
- * - DMs work without bot needing to be in the server
- * - Private conversations with leads
- * - No permission issues
+ * ✅ UPDATED: Supports both channel-based (new, deterministic) and DM-based (legacy) sending
+ * - If leadId is provided: Uses channel-based routing (recommended)
+ * - If discordUserId is provided: Uses DM-based routing (legacy, backward compatible)
  */
 export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const { channelId, content, discordUserId } = req.body;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
+    const { channelId, content, discordUserId, leadId } = req.body;
 
     if (!content) {
       errorResponse(res, 'Message content is required', 400);
-      return;
-    }
-
-    // Validate discordUserId is provided
-    if (!discordUserId) {
-      errorResponse(res, 'discordUserId is required. Messages are sent as DMs only.', 400);
       return;
     }
 
@@ -662,25 +722,84 @@ export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // ✅ ALWAYS send as DM for reliability
-    console.log(`📤 Sending DM to Discord user ${discordUserId} from CRM user ${userId}`);
-    const sentMessage = await discordBotService.sendDM(discordUserId, content, userId);
-
-    if (!sentMessage) {
-      errorResponse(res, 'Failed to send DM. User may have DMs disabled.', 500);
+    const client = discordBotService.getClient();
+    if (!client) {
+      errorResponse(res, 'Discord client not available', 500);
       return;
     }
 
-    successResponse(res, { message: sentMessage }, 'Message sent successfully via DM');
+    // ✅ whopCompanyId already available from earlier user resolution
+
+    // ✅ NEW: Channel-based sending (deterministic routing)
+    if (leadId) {
+      console.log(`📤 Sending message to lead ${leadId} via dedicated channel (channel-based routing)`);
+      
+      try {
+        // ✅ AUTO-CREATE: Check if channel exists, create if not
+        let leadChannel = await getLeadChannel(leadId);
+        
+        if (!leadChannel) {
+          console.log(`📢 No channel exists for lead ${leadId}, creating one automatically...`);
+          
+          try {
+            leadChannel = await createLeadChannel(leadId, userId, whopCompanyId || '', client);
+            console.log(`✅ Auto-created channel: ${leadChannel.discordChannelName} (${leadChannel.discordChannelId})`);
+          } catch (createError: any) {
+            console.error('Failed to auto-create channel:', createError);
+            errorResponse(res, `Failed to create Discord channel: ${createError.message}`, 500);
+            return;
+          }
+        }
+        
+        // Now send the message to the channel
+        const messageId = await sendMessageToChannel(
+          leadId,
+          content,
+          userId,
+          whopCompanyId || '',
+          client
+        );
+
+        successResponse(res, { messageId, method: 'channel', channelCreated: !leadChannel }, 'Message sent successfully via lead channel');
+        return;
+      } catch (error: any) {
+        console.error('Channel-based send failed:', error);
+        errorResponse(res, error.message || 'Failed to send message via channel', 500);
+        return;
+      }
+    }
+
+    // ⚠️ LEGACY: DM-based sending (backward compatibility)
+    if (discordUserId) {
+      console.log(`📤 Sending DM to Discord user ${discordUserId} (legacy DM-based routing)`);
+      
+      try {
+        const sentMessage = await discordBotService.sendDM(discordUserId, content, userId);
+
+        if (!sentMessage) {
+          errorResponse(res, 'Failed to send DM. User may have DMs disabled.', 500);
+          return;
+        }
+
+        successResponse(res, { message: sentMessage, method: 'dm' }, 'Message sent successfully via DM');
+        return;
+      } catch (error: any) {
+        console.error('DM send failed:', error);
+        
+        if (error.message?.includes('Cannot send messages to this user')) {
+          errorResponse(res, 'Cannot send DM to this user. They may have DMs disabled or blocked the bot.', 400);
+        } else {
+          errorResponse(res, error.message || 'Failed to send DM', 500);
+        }
+        return;
+      }
+    }
+
+    // Neither leadId nor discordUserId provided
+    errorResponse(res, 'Either leadId (recommended) or discordUserId (legacy) is required', 400);
   } catch (error: any) {
     console.error('Send message error:', error);
-    
-    // Provide helpful error messages
-    if (error.message?.includes('Cannot send messages to this user')) {
-      errorResponse(res, 'Cannot send DM to this user. They may have DMs disabled or blocked the bot.', 400);
-    } else {
-      errorResponse(res, error.message || 'Failed to send message', 500);
-    }
+    errorResponse(res, error.message || 'Failed to send message', 500);
   }
 };
 
@@ -690,7 +809,17 @@ export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promi
  */
 export const markMessageAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
     const { id } = req.params;
 
     const message = await DiscordMessage.findOne({ _id: id, userId });
@@ -745,6 +874,224 @@ export const stopBot = async (req: AuthRequest, res: Response): Promise<void> =>
   }
 };
 
+// ========================================
+// ✅ NEW: CHANNEL-BASED ENDPOINTS
+// ========================================
+
+/**
+ * Create a dedicated Discord channel for a lead
+ * POST /api/v1/integrations/discord/channels
+ * Body: { leadId: string }
+ */
+export const createChannel = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
+    const { leadId } = req.body;
+
+    if (!leadId) {
+      errorResponse(res, 'leadId is required', 400);
+      return;
+    }
+
+    // Check connection
+    const connection = await DiscordConnection.findOne({ userId, isActive: true });
+    if (!connection) {
+      errorResponse(res, 'Discord not connected', 400);
+      return;
+    }
+
+    // Check if bot is running
+    if (!discordBotService.isActive()) {
+      errorResponse(res, 'Discord bot is not active', 500);
+      return;
+    }
+
+    const client = discordBotService.getClient();
+    if (!client) {
+      errorResponse(res, 'Discord client not available', 500);
+      return;
+    }
+
+    // ✅ whopCompanyId already available from earlier user resolution
+
+    if (!whopCompanyId) {
+      errorResponse(res, 'User does not have a Whop company ID', 400);
+      return;
+    }
+
+    // Verify lead exists and belongs to this user
+    const lead = await Lead.findOne({ _id: leadId, userId });
+    if (!lead) {
+      errorResponse(res, 'Lead not found or does not belong to this user', 404);
+      return;
+    }
+
+    // Check if channel already exists
+    const existingChannel = await getLeadChannel(leadId);
+    if (existingChannel) {
+      successResponse(res, { channel: existingChannel }, 'Channel already exists for this lead');
+      return;
+    }
+
+    // Create the channel
+    console.log(`📢 Creating Discord channel for lead ${leadId}`);
+    const channel = await createLeadChannel(leadId, userId, whopCompanyId, client);
+
+    // Track telemetry
+    await TelemetryEvent.create({
+      userId,
+      whopCompanyId,  // ✅ Required field
+      eventType: 'discord_channel_created',
+      eventData: {
+        leadId,
+        channelId: channel.discordChannelId,
+        channelName: channel.discordChannelName,
+      },
+    });
+
+    successResponse(res, { channel }, 'Channel created successfully');
+  } catch (error: any) {
+    console.error('Create channel error:', error);
+    errorResponse(res, error.message || 'Failed to create channel', 500);
+  }
+};
+
+/**
+ * Get channel details for a specific lead
+ * GET /api/v1/integrations/discord/channels/:leadId
+ */
+export const getChannelForLead = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
+    const { leadId } = req.params;
+
+    // Verify lead belongs to this user
+    const lead = await Lead.findOne({ _id: leadId, userId });
+    if (!lead) {
+      errorResponse(res, 'Lead not found or does not belong to this user', 404);
+      return;
+    }
+
+    // Get channel
+    const channel = await getLeadChannel(leadId);
+
+    if (!channel) {
+      successResponse(res, { channel: null }, 'No channel found for this lead');
+      return;
+    }
+
+    successResponse(res, { channel }, 'Channel retrieved successfully');
+  } catch (error: any) {
+    console.error('Get channel error:', error);
+    errorResponse(res, error.message || 'Failed to get channel', 500);
+  }
+};
+
+/**
+ * Get all channels for the user's company
+ * GET /api/v1/integrations/discord/channels
+ */
+export const getCompanyChannelsList = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // ✅ REFACTORED: Use Whop identifiers from request
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
+
+    // Get user's whopCompanyId (already have it from request, but keeping for consistency)
+    // const user = await User.findById(userId);
+    // const whopCompanyId = user?.whopCompanyId;
+
+    if (!whopCompanyId) {
+      errorResponse(res, 'User does not have a Whop company ID', 400);
+      return;
+    }
+
+    // Get all channels for this company
+    const channels = await getCompanyChannels(whopCompanyId);
+
+    successResponse(res, { channels, count: channels.length }, 'Channels retrieved successfully');
+  } catch (error: any) {
+    console.error('Get company channels error:', error);
+    errorResponse(res, error.message || 'Failed to get channels', 500);
+  }
+};
+
+/**
+ * Archive a channel
+ * DELETE /api/v1/integrations/discord/channels/:leadId
+ */
+export const archiveChannel = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
+    const { leadId } = req.params;
+    const { reason } = req.body;
+
+    // Verify lead belongs to this user
+    const lead = await Lead.findOne({ _id: leadId, userId });
+    if (!lead) {
+      errorResponse(res, 'Lead not found or does not belong to this user', 404);
+      return;
+    }
+
+    // Archive the channel
+    await archiveLeadChannel(leadId, reason || 'Archived by user');
+
+    // Track telemetry
+    await TelemetryEvent.create({
+      userId,
+      whopCompanyId: lead.whopCompanyId || '',  // ✅ Required field (from lead)
+      eventType: 'discord_channel_archived',
+      eventData: {
+        leadId,
+        reason: reason || 'Archived by user',
+      },
+    });
+
+    successResponse(res, null, 'Channel archived successfully');
+  } catch (error: any) {
+    console.error('Archive channel error:', error);
+    errorResponse(res, error.message || 'Failed to archive channel', 500);
+  }
+};
+
 export default {
   getConnectionStatus,
   getOAuthURL,
@@ -756,4 +1103,9 @@ export default {
   markMessageAsRead,
   startBot,
   stopBot,
+  // ✅ NEW: Channel-based endpoints
+  createChannel,
+  getChannelForLead,
+  getCompanyChannelsList,
+  archiveChannel,
 };

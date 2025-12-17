@@ -133,16 +133,18 @@ export function hasRoleLevel(role: WhopRole | undefined, minimumRole: WhopRole):
 export function requireWhopRole(...allowedRoles: WhopRole[]) {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const userId = req.userId;
+      // ✅ REFACTORED: Use Whop identifiers to resolve user
+      const whopUserId = req.whopUserId;
+      const whopCompanyId = req.whopCompanyId;
       
-      if (!userId) {
+      if (!whopUserId || !whopCompanyId) {
         errorResponse(res, 'Authentication required', 401);
         return;
       }
 
       // Fetch user's Whop role from database
       const { User } = await import('../models/index.js');
-      const user = await User.findById(userId).select('whopRole whopCompanyId');
+      const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId).select('whopRole whopCompanyId');
       
       if (!user) {
         errorResponse(res, 'User not found', 404);
