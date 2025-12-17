@@ -10,6 +10,11 @@ import {
   markMessageAsRead,
   startBot,
   stopBot,
+  // ✅ NEW: Channel-based endpoints
+  createChannel,
+  getChannelForLead,
+  getCompanyChannelsList,
+  archiveChannel,
 } from '../controllers/discordController.js';
 import { authenticate } from '../middlewares/auth.js';
 
@@ -34,6 +39,12 @@ router.post('/sync-members', syncDiscordMembers);
 router.get('/messages', getDiscordMessages);
 router.post('/send-message', sendDiscordMessage);
 router.patch('/messages/:id/read', markMessageAsRead);
+
+// ✅ NEW: Channel management (deterministic routing)
+router.post('/channels', createChannel); // Create channel for a lead
+router.get('/channels', getCompanyChannelsList); // Get all company channels
+router.get('/channels/:leadId', getChannelForLead); // Get channel for specific lead
+router.delete('/channels/:leadId', archiveChannel); // Archive a channel
 
 // Bot control
 router.post('/start-bot', startBot);

@@ -9,6 +9,11 @@ const activitySchema = new Schema<IActivity>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],
+      index: true,
+    },
     type: {
       type: String,
       enum: ['email', 'call', 'meeting', 'note', 'payment', 'deliverable', 'deal_created', 'deal_updated', 'contact_created'],
@@ -63,6 +68,7 @@ activitySchema.virtual('id').get(function () {
 
 // Indexes
 activitySchema.index({ userId: 1, createdAt: -1 });
+activitySchema.index({ whopCompanyId: 1, createdAt: -1 });
 activitySchema.index({ relatedEntityType: 1, relatedEntityId: 1 });
 
 export const Activity = mongoose.model<IActivity>('Activity', activitySchema);

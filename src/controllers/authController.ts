@@ -9,180 +9,43 @@ import { whopService } from '../services/whopService.js';
 /**
  * Register new user
  * POST /api/v1/auth/register
+ * 
+ * ⚠️ DISABLED: This application is Whop-only. Use Whop OAuth instead.
  */
 export const register = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { name, email, password } = req.body;
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      errorResponse(res, 'User already exists with this email', 400);
-      return;
-    }
-
-    // Create new user
-    const user = await User.create({
-      name,
-      email,
-      password,
-      role: 'creator',
-      subscriptionPlan: 'Starter',
-    });
-
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    const refreshToken = generateRefreshToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    // Save refresh token
-    user.refreshTokens.push(refreshToken);
-    await user.save();
-
-    // Track registration event
-    await TelemetryEvent.create({
-      userId: user._id.toString(),
-      eventType: 'user_registered',
-      eventData: { email: user.email, plan: user.subscriptionPlan },
-    });
-
-    // Return user and tokens
-    successResponse(
-      res,
-      {
-        user: user.toJSON(),
-        accessToken,
-        refreshToken,
-      },
-      'User registered successfully',
-      201
-    );
-  } catch (error: any) {
-    errorResponse(res, error.message || 'Registration failed', 500);
-  }
+  errorResponse(
+    res, 
+    'Registration is disabled. This application requires Whop authentication. Please use /api/v1/auth/whop', 
+    403
+  );
 };
 
 /**
  * Login user
  * POST /api/v1/auth/login
+ * 
+ * ⚠️ DISABLED: This application is Whop-only. Use Whop OAuth instead.
  */
 export const login = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { email, password } = req.body;
-
-    // Find user with password field
-    const user = await User.findOne({ email }).select('+password');
-    if (!user) {
-      errorResponse(res, 'Invalid email or password', 401);
-      return;
-    }
-
-    // Check password
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      errorResponse(res, 'Invalid email or password', 401);
-      return;
-    }
-
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    const refreshToken = generateRefreshToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    // Save refresh token
-    user.refreshTokens.push(refreshToken);
-    user.lastLogin = new Date();
-    await user.save();
-
-    // Track login event
-    await TelemetryEvent.create({
-      userId: user._id.toString(),
-      eventType: 'user_login',
-      eventData: { email: user.email },
-    });
-
-    // Return user and tokens (without password)
-    successResponse(res, {
-      user: user.toJSON(),
-      accessToken,
-      refreshToken,
-    });
-  } catch (error: any) {
-    errorResponse(res, error.message || 'Login failed', 500);
-  }
+  errorResponse(
+    res, 
+    'Login is disabled. This application requires Whop authentication. Please use /api/v1/auth/whop', 
+    403
+  );
 };
 
 /**
  * Demo login - Auto login with demo account
  * POST /api/v1/auth/demo
+ * 
+ * ⚠️ DISABLED: This application is Whop-only. Use Whop OAuth instead.
  */
 export const demoLogin = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const demoEmail = 'demo@paveos.com';
-
-    // Find or create demo user
-    let user = await User.findOne({ email: demoEmail });
-
-    if (!user) {
-      // Create demo user with sample data
-      user = await User.create({
-        name: 'Demo User',
-        email: demoEmail,
-        password: 'demo123',
-        role: 'creator',
-        subscriptionPlan: 'Pro',
-      });
-    }
-
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    const refreshToken = generateRefreshToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    // Update login time
-    user.lastLogin = new Date();
-    await user.save();
-
-    // Track demo login
-    await TelemetryEvent.create({
-      userId: user._id.toString(),
-      eventType: 'user_login',
-      eventData: { email: user.email, isDemo: true },
-    });
-
-    // Return user and tokens
-    successResponse(res, {
-      user: user.toJSON(),
-      accessToken,
-      refreshToken,
-    });
-  } catch (error: any) {
-    errorResponse(res, error.message || 'Demo login failed', 500);
-  }
+  errorResponse(
+    res, 
+    'Demo login is disabled. This application requires Whop authentication. Please use /api/v1/auth/whop', 
+    403
+  );
 };
 
 /**
@@ -192,13 +55,18 @@ export const demoLogin = async (req: AuthRequest, res: Response): Promise<void> 
 export const logout = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { refreshToken } = req.body;
-    const userId = req.userId;
+    const whopUserId = req.whopUserId;
+    const whopCompanyId = req.whopCompanyId;
 
-    if (userId && refreshToken) {
-      // Remove refresh token from user
-      await User.findByIdAndUpdate(userId, {
-        $pull: { refreshTokens: refreshToken },
-      });
+    if (whopUserId && whopCompanyId && refreshToken) {
+      // ✅ REFACTORED: Find user by Whop identifiers
+      const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+      if (user) {
+        // Remove refresh token from user
+        await User.findByIdAndUpdate(user._id, {
+          $pull: { refreshTokens: refreshToken },
+        });
+      }
     }
 
     successResponse(res, null, 'Logged out successfully');
@@ -220,7 +88,7 @@ export const refreshAccessToken = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Verify refresh token (implement verifyRefreshToken in jwt utils)
+    // Verify refresh token
     const { verifyRefreshToken } = await import('../utils/jwt.js');
     const decoded = verifyRefreshToken(refreshToken);
 
@@ -229,18 +97,21 @@ export const refreshAccessToken = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Check if refresh token exists in user's tokens
-    const user = await User.findById(decoded.userId);
+    // ✅ REFACTORED: Find user by Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(decoded.whopUserId, decoded.whopCompanyId);
+    
     if (!user || !user.refreshTokens.includes(refreshToken)) {
       errorResponse(res, 'Invalid refresh token', 401);
       return;
     }
 
-    // Generate new access token
+    // ✅ REFACTORED: Generate new access token with Whop identifiers
     const accessToken = generateAccessToken({
-      userId: user._id.toString(),
+      whopUserId: user.whopUserId,
+      whopCompanyId: user.whopCompanyId,
       email: user.email,
-      role: user.role,
+      whopRole: user.whopRole,
+      _internalUserId: user._id.toString(),
     });
 
     successResponse(res, { accessToken });
@@ -252,55 +123,12 @@ export const refreshAccessToken = async (req: AuthRequest, res: Response): Promi
 /**
  * Google OAuth callback handler
  * GET /api/v1/auth/google/callback
+ * 
+ * ⚠️ DISABLED: This application is Whop-only. Use Whop OAuth instead.
  */
 export const googleCallback = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const user = req.user as any;
-
-    console.log('Google OAuth callback - User:', user ? 'Found' : 'Not found');
-
-    if (!user || !user._id) {
-      console.error('Google OAuth callback - No user in request');
-      errorResponse(res, 'Authentication failed', 401);
-      return;
-    }
-
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    const refreshToken = generateRefreshToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    // Save refresh token
-    user.refreshTokens.push(refreshToken);
-    user.lastLogin = new Date();
-    await user.save();
-
-    console.log('Google OAuth callback - Tokens generated, redirecting to frontend');
-
-    // Track login event
-    await TelemetryEvent.create({
-      userId: user._id.toString(),
-      eventType: 'user_login',
-      eventData: { email: user.email, provider: 'google' },
-    });
-
-    // Redirect to frontend with tokens
-    const { CONSTANTS } = await import('../config/constants.js');
-    const redirectUrl = `${CONSTANTS.FRONTEND_URL}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`;
-    res.redirect(redirectUrl);
-  } catch (error: any) {
-    console.error('Google OAuth callback error:', error.message || error);
-    const { CONSTANTS } = await import('../config/constants.js');
-    res.redirect(`${CONSTANTS.FRONTEND_URL}/login?error=auth_failed`);
-  }
+  const { CONSTANTS } = await import('../config/constants.js');
+  res.redirect(`${CONSTANTS.FRONTEND_URL}/login?error=google_auth_disabled&message=This application requires Whop authentication`);
 };
 
 /**
@@ -365,28 +193,22 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       // Continue with provided data or defaults
     }
 
-    // ✅ MULTI-TENANT FIX: Find user by BOTH whopUserId AND whopCompanyId
+    // ✅ REFACTORED: Find user by BOTH whopUserId AND whopCompanyId
     // This allows the same person to have separate accounts for different companies
-    let user = await User.findOne({ whopUserId, whopCompanyId });
+    let user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
 
     if (!user) {
-      // Auto-create user from Whop data for this specific company
-      const finalEmail = userEmail || `whop_${whopUserId}_${whopCompanyId.slice(-6)}@paveos.app`;
-      const finalName = userName || userEmail?.split('@')[0] || 'Whop User';
-
-      user = await User.create({
-        name: finalName,
-        email: finalEmail,
-        password: Math.random().toString(36).slice(-12), // Random password (won't be used)
-        role: 'creator',
-        subscriptionPlan: 'Pro', // Whop users get Pro plan
+      // Auto-create user from Whop data for this specific company using the new helper
+      user = await (User as any).findOrCreateWhopUser({
         whopUserId,
-        whopCompanyId, // Store the specific company ID
-        whopAuthorizedUserId, // Store authorized user ID
-        whopRole, // Store Whop role
+        whopCompanyId,
+        email: userEmail,
+        name: userName,
+        whopRole,
+        whopAuthorizedUserId,
       });
 
-      console.log(`✅ Created new user for company ${whopCompanyId}: ${finalName} (${finalEmail}) with role: ${whopRole || 'none'}`);
+      console.log(`✅ Created new user for company ${whopCompanyId}: ${user.name} (${user.email}) with role: ${whopRole || 'none'}`);
     } else {
       // Update user data if provided and changed
       let needsUpdate = false;
@@ -424,19 +246,21 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
-    // Generate tokens with Whop role included
+    // ✅ REFACTORED: Generate tokens with whopUserId and whopCompanyId as primary identifiers
     const accessToken = generateAccessToken({
-      userId: user._id.toString(),
+      whopUserId: user.whopUserId,
+      whopCompanyId: user.whopCompanyId,
       email: user.email,
-      role: user.role,
       whopRole: user.whopRole,
+      _internalUserId: user._id.toString(),  // For backward compatibility only
     });
 
     const refreshToken = generateRefreshToken({
-      userId: user._id.toString(),
+      whopUserId: user.whopUserId,
+      whopCompanyId: user.whopCompanyId,
       email: user.email,
-      role: user.role,
       whopRole: user.whopRole,
+      _internalUserId: user._id.toString(),  // For backward compatibility only
     });
 
     // Save refresh token
@@ -447,6 +271,7 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
     // Track login event
     await TelemetryEvent.create({
       userId: user._id.toString(),
+      whopCompanyId,  // ✅ Required field
       eventType: 'user_login',
       eventData: { email: user.email, provider: 'whop', whopCompanyId, whopRole: user.whopRole },
     });

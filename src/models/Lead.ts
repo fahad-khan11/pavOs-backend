@@ -11,7 +11,7 @@ const leadSchema = new Schema<ILead>(
     },
     whopCompanyId: {
       type: String,
-      required: false,  // Optional for backward compatibility
+      required: [true, 'Whop Company ID is required'],  // ✅ REFACTORED: Now required
       index: true,      // Index for fast company-based queries
     },
     contactId: {
@@ -39,6 +39,18 @@ const leadSchema = new Schema<ILead>(
     },
     discordUsername: {
       type: String,
+    },
+    discordChannelId: {
+      type: String,
+      index: true,
+    },
+    discordInviteSent: {
+      type: Boolean,
+      default: false,
+    },
+    discordJoinedChannel: {
+      type: Boolean,
+      default: false,
     },
     instagramUsername: {
       type: String,
@@ -140,6 +152,10 @@ leadSchema.index({ userId: 1, nextFollowUpDate: 1 });
 leadSchema.index({ userId: 1, createdAt: -1 });
 leadSchema.index({ email: 1 }, { sparse: true });
 leadSchema.index({ discordUserId: 1 }, { sparse: true });
+// ✅ REFACTORED: Add compound index for multi-tenant queries
+leadSchema.index({ whopCompanyId: 1, status: 1 });
+leadSchema.index({ whopCompanyId: 1, source: 1 });
+leadSchema.index({ whopCompanyId: 1, createdAt: -1 });
 
 // Virtual for id field
 leadSchema.virtual('id').get(function () {

@@ -9,6 +9,11 @@ const discordMessageSchema = new Schema<IDiscordMessage>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],  // ✅ REFACTORED: Now required
+      index: true,
+    },
     contactId: {
       type: String,
       ref: 'Contact',
@@ -17,6 +22,10 @@ const discordMessageSchema = new Schema<IDiscordMessage>(
     leadId: {
       type: String,
       ref: 'Lead',
+      index: true,
+    },
+    discordGuildId: {
+      type: String,
       index: true,
     },
     discordChannelId: {
@@ -99,9 +108,11 @@ const discordMessageSchema = new Schema<IDiscordMessage>(
 
 // Index for efficient querying
 discordMessageSchema.index({ userId: 1, createdAt: -1 });
+discordMessageSchema.index({ whopCompanyId: 1, createdAt: -1 });
 discordMessageSchema.index({ contactId: 1, createdAt: -1 });
 discordMessageSchema.index({ leadId: 1, createdAt: -1 });
 discordMessageSchema.index({ discordChannelId: 1, createdAt: -1 });
+discordMessageSchema.index({ discordGuildId: 1, createdAt: -1 });
 discordMessageSchema.index({ isRead: 1, userId: 1 });
 
 // Virtual for id field

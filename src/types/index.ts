@@ -14,13 +14,13 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password?: string;
-  role: UserRole;
+  role: UserRole;  // ⚠️ DEPRECATED: Internal role, do not use for authorization
   subscriptionPlan: SubscriptionPlan;
   whopId?: string;
-  whopUserId?: string;
-  whopCompanyId?: string;
+  whopUserId: string;  // ✅ REQUIRED: Primary user identifier
+  whopCompanyId: string;  // ✅ REQUIRED: Tenant boundary
   whopAuthorizedUserId?: string;
-  whopRole?: WhopRole;
+  whopRole?: WhopRole;  // ✅ PRIMARY: Use this for all authorization checks
   googleId?: string;
   avatar?: string;
   isEmailVerified?: boolean;
@@ -38,8 +38,8 @@ export type ContactStatus = 'active' | 'prospect' | 'inactive';
 
 export interface IContact extends Document {
   id: string;
-  userId: string;
-  whopCompanyId?: string;  // ✅ Multi-tenant company isolation
+  userId: string;  // ⚠️ DEPRECATED: Use whopUserId via user lookup
+  whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant company isolation
   name: string;
   email: string;
   phone: string;
@@ -70,8 +70,8 @@ export type DealStatus = 'active' | 'completed';
 
 export interface IDeal extends Document {
   id: string;
-  creatorId: string;
-  whopCompanyId?: string;  // ✅ Multi-tenant company isolation
+  creatorId: string;  // ⚠️ DEPRECATED: Use whopUserId via user lookup
+  whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant company isolation
   brandName: string;
   brandContact: string;
   dealValue: number;
@@ -101,6 +101,7 @@ export type PaymentStatus = 'pending' | 'paid' | 'overdue' | 'cancelled';
 export interface IPayment extends Document {
   id: string;
   userId: string;
+  whopCompanyId: string;
   dealId?: string;
   leadId?: string;
   amount: number;
@@ -127,6 +128,7 @@ export type DeliverablePriority = 'low' | 'medium' | 'high';
 export interface IDeliverable extends Document {
   id: string;
   userId: string;
+  whopCompanyId: string;
   dealId: string;
   title: string;
   description: string;
@@ -162,6 +164,7 @@ export type ActivityType = 'email' | 'call' | 'meeting' | 'note' | 'payment' | '
 export interface IActivity extends Document {
   id: string;
   userId: string;
+  whopCompanyId: string;
   type: ActivityType;
   title: string;
   description: string;
@@ -181,6 +184,7 @@ export type ReminderStatus = 'pending' | 'sent' | 'dismissed';
 export interface IReminder extends Document {
   id: string;
   userId: string;
+  whopCompanyId: string;
   type: ReminderType;
   title: string;
   message: string;
@@ -216,6 +220,7 @@ export type TelemetryEventType =
 export interface ITelemetryEvent extends Document {
   id: string;
   userId: string;
+  whopCompanyId: string;
   eventType: TelemetryEventType;
   eventData?: Record<string, any>;
   userAgent?: string;
@@ -232,6 +237,7 @@ export type ImportStatus = 'pending' | 'processing' | 'completed' | 'failed' | '
 export interface ICSVImport extends Document {
   id: string;
   userId: string;
+  whopCompanyId: string;
   fileName: string;
   fileSize: number;
   rowCount: number;
@@ -298,10 +304,35 @@ export interface IDiscordConnection extends Document {
   accessToken?: string;
   refreshToken?: string;
   botToken?: string;
+  botInvited?: boolean;
+  botPermissions?: string;
   isActive: boolean;
   connectedAt: Date;
   lastSyncAt?: Date;
   syncedMembersCount?: number;
+  syncedChannelsCount?: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ============================================
+// DISCORD LEAD CHANNEL TYPES
+// ============================================
+
+export interface IDiscordLeadChannel extends Document {
+  id: string;
+  userId: string;
+  whopCompanyId: string;
+  leadId: string;
+  discordGuildId: string;
+  discordChannelId: string;
+  discordChannelName: string;
+  discordUserId?: string;
+  discordUsername?: string;
+  channelCreatedAt: Date;
+  lastMessageAt?: Date;
+  messageCount: number;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -314,9 +345,11 @@ export type MessageDirection = 'incoming' | 'outgoing';
 
 export interface IDiscordMessage extends Document {
   id: string;
-  userId: string;
+  userId: string;  // ⚠️ DEPRECATED: Use whopUserId via user lookup
+  whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant isolation
   contactId?: string;
   leadId?: string;
+  discordGuildId?: string;
   discordChannelId: string;
   discordMessageId: string;
   authorDiscordId: string;
@@ -345,14 +378,17 @@ export type LeadStatus = 'new' | 'in_conversation' | 'proposal' | 'negotiation' 
 
 export interface ILead extends Document {
   id: string;
-  userId: string;
-  whopCompanyId?: string;  // ✅ Multi-tenant company isolation
+  userId: string;  // ⚠️ DEPRECATED: Use whopUserId via user lookup
+  whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant company isolation
   contactId?: string;
   name: string;
   email?: string;
   phone?: string;
   discordUserId?: string;
   discordUsername?: string;
+  discordChannelId?: string;
+  discordInviteSent?: boolean;
+  discordJoinedChannel?: boolean;
   instagramUsername?: string;
   tiktokUsername?: string;
   source: LeadSource;
@@ -377,17 +413,22 @@ export interface ILead extends Document {
 // ============================================
 
 export interface JWTPayload {
-  userId: string;
+  whopUserId: string;  // ✅ REFACTORED: Use whopUserId as primary identity
+  whopCompanyId: string;  // ✅ REFACTORED: Use whopCompanyId as tenant boundary
   email: string;
-  role: UserRole;
-  whopRole?: WhopRole;
+  whopRole?: WhopRole;  // ✅ REFACTORED: Use whopRole as sole source of permissions
+  // Internal fields for backward compatibility
+  _internalUserId?: string;
 }
 
 export interface AuthRequest extends Request {
   user?: JWTPayload | any; // Allow both JWT payload and Passport user
-  userId?: string;
-  whopCompanyId?: string;  // ✅ Multi-tenant company ID
-  whopRole?: WhopRole;  // 🔐 Whop team member role
+  // ✅ REFACTORED: Primary identifiers are now whopUserId and whopCompanyId
+  whopUserId?: string;  // User identity (set by authenticate middleware)
+  whopCompanyId?: string;  // Tenant boundary (set by authenticate middleware)
+  whopRole?: WhopRole;  // Permission level (from Whop, not internal role)
+  // Internal ID kept for backward compatibility but should not be used for authorization
+  _internalUserId?: string;
 }
 
 // ============================================

@@ -9,6 +9,11 @@ const reminderSchema = new Schema<IReminder>(
       ref: 'User',
       index: true,
     },
+    whopCompanyId: {
+      type: String,
+      required: [true, 'Whop Company ID is required'],
+      index: true,
+    },
     type: {
       type: String,
       enum: ['payment_due', 'payment_overdue', 'deliverable_due', 'follow_up', 'custom'],
@@ -81,6 +86,7 @@ reminderSchema.virtual('id').get(function () {
 
 // Indexes
 reminderSchema.index({ userId: 1, status: 1 });
+reminderSchema.index({ whopCompanyId: 1, dueDate: 1 });
 reminderSchema.index({ dueDate: 1, status: 1 });
 
 export const Reminder = mongoose.model<IReminder>('Reminder', reminderSchema);

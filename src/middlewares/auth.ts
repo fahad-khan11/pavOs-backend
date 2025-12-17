@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { AuthRequest, UserRole } from '../types/index.js';
+import { AuthRequest, WhopRole } from '../types/index.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { errorResponse } from '../utils/response.js';
 
@@ -26,23 +26,30 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       return;
     }
 
-    console.log('✅ Auth: Success - userId:', decoded.userId);
+    console.log('✅ Auth: Success - whopUserId:', decoded.whopUserId, 'whopCompanyId:', decoded.whopCompanyId);
 
-    // Attach user info to request
+    // ✅ REFACTORED: Attach Whop identifiers to request (primary auth mechanism)
     req.user = decoded;
-    req.userId = decoded.userId;
+    req.whopUserId = decoded.whopUserId;
+    req.whopCompanyId = decoded.whopCompanyId;
+    req.whopRole = decoded.whopRole;
 
-    // ✅ MULTI-TENANT: Fetch and attach user's whopCompanyId for tenant isolation
+    // ✅ REFACTORED: Resolve internal user ID for backward compatibility (DO NOT USE FOR AUTHORIZATION)
     try {
       const { User } = await import('../models/index.js');
-      const user = await User.findById(decoded.userId).select('whopCompanyId').lean();
-      if (user && user.whopCompanyId) {
-        req.whopCompanyId = user.whopCompanyId;
-        console.log('✅ Auth: Company ID:', user.whopCompanyId);
+      const user = await (User as any).findByWhopIdentifiers(decoded.whopUserId, decoded.whopCompanyId);
+      if (user) {
+        req._internalUserId = user._id.toString();
+        console.log('✅ Auth: Internal userId:', user._id.toString(), '(for backward compatibility only)');
+      } else {
+        console.log('⚠️  Auth: User not found in database for whopUserId:', decoded.whopUserId, 'whopCompanyId:', decoded.whopCompanyId);
+        errorResponse(res, 'User not found', 401);
+        return;
       }
     } catch (error) {
-      console.log('⚠️  Could not fetch company ID:', error);
-      // Continue without company ID for backward compatibility
+      console.error('❌ Could not resolve user:', error);
+      errorResponse(res, 'User resolution failed', 401);
+      return;
     }
 
     next();
@@ -52,18 +59,28 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
   }
 };
 
-export const authorize = (...roles: UserRole[]) => {
+// ✅ REFACTORED: Authorization now uses whopRole instead of internal role
+export const authorize = (...allowedRoles: WhopRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       errorResponse(res, 'Not authenticated', 401);
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
+    // ✅ REFACTORED: Check whopRole instead of internal role
+    if (allowedRoles.length > 0 && !req.whopRole) {
+      console.log('⚠️  Auth: No whopRole found for user, denying access');
       errorResponse(res, 'Not authorized to access this resource', 403);
       return;
     }
 
+    if (allowedRoles.length > 0 && !allowedRoles.includes(req.whopRole!)) {
+      console.log(`⚠️  Auth: User role '${req.whopRole}' not in allowed roles:`, allowedRoles);
+      errorResponse(res, 'Not authorized to access this resource', 403);
+      return;
+    }
+
+    console.log('✅ Auth: User authorized with role:', req.whopRole);
     next();
   };
 };

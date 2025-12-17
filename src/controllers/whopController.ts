@@ -10,7 +10,17 @@ import { WhopConnection, Contact, User, TelemetryEvent, Lead, Payment } from '..
  */
 export const getConnectionStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
 
     const connection = await WhopConnection.findOne({ userId, isActive: true });
 
@@ -40,16 +50,19 @@ export const getConnectionStatus = async (req: AuthRequest, res: Response): Prom
  */
 export const connectWhop = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-
-    // Get user to retrieve Whop data
-    const user = await User.findById(userId);
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId  
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
     if (!user) {
       errorResponse(res, 'User not found', 404);
       return;
     }
+    
+    const userId = user._id.toString();
 
-    // Check if user has Whop credentials
+    // Check if user has Whop credentials (should always be true in Whop-only app)
     if (!user.whopUserId || !user.whopCompanyId) {
       errorResponse(res, 'User is not authenticated via Whop. Please log in through Whop.', 400);
       return;
@@ -82,6 +95,7 @@ export const connectWhop = async (req: AuthRequest, res: Response): Promise<void
     // Track telemetry
     await TelemetryEvent.create({
       userId,
+      whopCompanyId: user.whopCompanyId,  // ✅ Required field
       eventType: 'whop_connected',
       eventData: {
         companyId: connection.whopCompanyId,
@@ -107,7 +121,17 @@ export const connectWhop = async (req: AuthRequest, res: Response): Promise<void
  */
 export const disconnectWhop = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
 
     const connection = await WhopConnection.findOne({ userId });
 
@@ -131,7 +155,17 @@ export const disconnectWhop = async (req: AuthRequest, res: Response): Promise<v
  */
 export const syncWhopCustomers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    // ✅ REFACTORED: Use Whop identifiers to resolve internal userId
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
 
     // Check connection
     const connection = await WhopConnection.findOne({ userId, isActive: true });
@@ -140,14 +174,8 @@ export const syncWhopCustomers = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    // ✅ MULTI-TENANT: Get user's company ID for proper tenant isolation
-    const user = await User.findById(userId);
-    if (!user || !user.whopCompanyId) {
-      errorResponse(res, 'User company information not found', 400);
-      return;
-    }
-
-    const userCompanyId = user.whopCompanyId;
+    // ✅ MULTI-TENANT: Use whopCompanyId from request (already have it from user resolution above)
+    const userCompanyId = whopCompanyId;
     console.log(`Starting Whop sync for user: ${userId}, company: ${userCompanyId}`);
 
     // ✅ MULTI-TENANT: Fetch members from user's company (not hardcoded company)
@@ -390,6 +418,7 @@ export const syncWhopCustomers = async (req: AuthRequest, res: Response): Promis
         if (matchedLead && matchedLead.status === 'won') {
           await TelemetryEvent.create({
             userId,
+            whopCompanyId: userCompanyId,  // ✅ Required field
             eventType: 'deal_won',
             eventData: {
               leadId: matchedLead._id,

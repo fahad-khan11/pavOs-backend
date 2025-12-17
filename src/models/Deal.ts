@@ -11,7 +11,7 @@ const dealSchema = new Schema<IDeal>(
     },
     whopCompanyId: {
       type: String,
-      required: false,  // Optional for backward compatibility
+      required: [true, 'Whop Company ID is required'],  // ✅ REFACTORED: Now required
       index: true,      // Index for fast company-based queries
     },
     brandName: {
@@ -129,6 +129,10 @@ dealSchema.index({ creatorId: 1, stage: 1 });
 dealSchema.index({ creatorId: 1, status: 1 });
 dealSchema.index({ contactId: 1 });
 dealSchema.index({ deadline: 1 });
+// ✅ REFACTORED: Add compound index for multi-tenant queries
+dealSchema.index({ whopCompanyId: 1, status: 1 });
+dealSchema.index({ whopCompanyId: 1, stage: 1 });
+dealSchema.index({ whopCompanyId: 1, createdAt: -1 });
 
 // Update contact's deal count and total value on save
 dealSchema.post('save', async function () {

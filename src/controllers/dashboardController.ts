@@ -1,23 +1,28 @@
 import { Response } from 'express';
-import { Deal, Contact, Payment, Deliverable, Activity, Lead } from '../models/index.js';
+import { Deal, Contact, Payment, Deliverable, Activity, Lead, User } from '../models/index.js';
 import { AuthRequest, DashboardStats } from '../types/index.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get dashboard statistics
  * GET /api/v1/dashboard/stats
  */
 export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const whopCompanyId = req.whopCompanyId;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
 
-    // Get all deals
-    const dealQuery: any = { creatorId: userId };
-    if (whopCompanyId) {
-      dealQuery.whopCompanyId = whopCompanyId;
+    // ✅ Resolve internal userId from Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
     }
-    const deals = await Deal.find(dealQuery);
+    const userId = user._id.toString();
+
+    // ✅ SECURITY: All queries filtered by whopCompanyId
+    const deals = await Deal.find({ whopCompanyId });
     const activeDeals = deals.filter((d) => d.status === 'active');
     const completedDeals = deals.filter((d) => d.stage === 'Completed');
 
@@ -28,8 +33,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
     const closeRate =
       deals.length > 0 ? Math.round((completedDeals.length / deals.length) * 100) : 0;
 
-    // Get active contacts count
-    const activeContacts = await Contact.countDocuments({ userId, status: 'active' });
+    // Get active contacts count (filtered by whopCompanyId)
+    const activeContacts = await Contact.countDocuments({ whopCompanyId, status: 'active' });
 
     // Deals in progress (not completed)
     const dealsInProgress = activeDeals.length;
@@ -46,14 +51,14 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
     const monthlyRevenue = monthlyDeals.reduce((sum, deal) => sum + deal.dealValue, 0);
     const weeklyRevenue = weeklyDeals.reduce((sum, deal) => sum + deal.dealValue, 0);
 
-    // Get pending and overdue payments
+    // Get pending and overdue payments (filtered by whopCompanyId)
     const pendingPayments = await Payment.countDocuments({
-      userId,
+      whopCompanyId,
       paymentStatus: 'pending',
     });
 
     const overduePayments = await Payment.countDocuments({
-      userId,
+      whopCompanyId,
       paymentStatus: 'overdue',
     });
 
@@ -75,15 +80,17 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get recent activity
  * GET /api/v1/dashboard/recent-activity?limit=10
  */
 export const getRecentActivity = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { limit = 10 } = req.query;
 
-    const activities = await Activity.find({ userId })
+    // ✅ SECURITY: Filter by whopCompanyId
+    const activities = await Activity.find({ whopCompanyId })
       .sort({ createdAt: -1 })
       .limit(parseInt(limit as string));
 
@@ -94,6 +101,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get upcoming deliverables
  * GET /api/v1/dashboard/upcoming-deliverables?limit=5
  */
@@ -102,11 +110,12 @@ export const getUpcomingDeliverables = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { limit = 5 } = req.query;
 
+    // ✅ SECURITY: Filter by whopCompanyId
     const deliverables = await Deliverable.find({
-      userId,
+      whopCompanyId,
       status: { $in: ['pending', 'in_progress'] },
     })
       .sort({ dueDate: 1 })
@@ -120,12 +129,13 @@ export const getUpcomingDeliverables = async (
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get revenue chart data
  * GET /api/v1/dashboard/revenue-chart?period=7d|30d|90d
  */
 export const getRevenueChart = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { period = '30d' } = req.query;
 
     // Calculate date range
@@ -134,9 +144,9 @@ export const getRevenueChart = async (req: AuthRequest, res: Response): Promise<
     const startDate = new Date(now);
     startDate.setDate(now.getDate() - daysAgo);
 
-    // Get completed deals in period
+    // ✅ SECURITY: Get completed deals filtered by whopCompanyId
     const deals = await Deal.find({
-      creatorId: userId,
+      whopCompanyId,
       stage: 'Completed',
       createdAt: { $gte: startDate },
     }).sort({ createdAt: 1 });
@@ -167,27 +177,23 @@ export const getRevenueChart = async (req: AuthRequest, res: Response): Promise<
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get analytics data for leads/pipeline
  * GET /api/v1/dashboard/analytics
  */
 export const getAnalytics = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
-    const whopCompanyId = req.whopCompanyId;
+    const whopCompanyId = req.whopCompanyId!;
 
-    // Get all leads for this user
-    const leadQuery: any = { userId };
-    if (whopCompanyId) {
-      leadQuery.whopCompanyId = whopCompanyId;
-    }
-    const leads = await Lead.find(leadQuery);
+    // ✅ SECURITY: Get all leads filtered by whopCompanyId
+    const leads = await Lead.find({ whopCompanyId });
     const wonLeads = leads.filter((l) => l.status === 'won');
     const lostLeads = leads.filter((l) => l.status === 'lost');
     const activeLeads = leads.filter((l) => l.status !== 'won' && l.status !== 'lost');
 
-    // Get payments (from Whop sync)
+    // Get payments (from Whop sync) filtered by whopCompanyId
     const payments = await Payment.find({
-      userId,
+      whopCompanyId,
       paymentStatus: 'paid',
       method: 'whop'
     });

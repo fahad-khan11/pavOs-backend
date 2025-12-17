@@ -11,7 +11,7 @@ const contactSchema = new Schema<IContact>(
     },
     whopCompanyId: {
       type: String,
-      required: false,  // Optional for backward compatibility
+      required: [true, 'Whop Company ID is required'],  // ✅ REFACTORED: Now required
       index: true,      // Index for fast company-based queries
     },
     name: {
@@ -138,6 +138,9 @@ contactSchema.virtual('id').get(function () {
 contactSchema.index({ userId: 1, status: 1 });
 contactSchema.index({ userId: 1, company: 1 });
 contactSchema.index({ email: 1, userId: 1 });
+// ✅ REFACTORED: Add compound index for multi-tenant queries
+contactSchema.index({ whopCompanyId: 1, status: 1 });
+contactSchema.index({ whopCompanyId: 1, createdAt: -1 });
 
 export const Contact = mongoose.model<IContact>('Contact', contactSchema);
 export default Contact;

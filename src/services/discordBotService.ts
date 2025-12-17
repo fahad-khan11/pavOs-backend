@@ -3,9 +3,12 @@ import { CONSTANTS } from '../config/constants.js';
 import { DiscordMessage } from '../models/DiscordMessage.js';
 import { Lead } from '../models/Lead.js';
 import { DiscordConnection } from '../models/DiscordConnection.js';
+import { DiscordLeadChannel } from '../models/DiscordLeadChannel.js';
 import { TelemetryEvent } from '../models/TelemetryEvent.js';
 import { User } from '../models/User.js';
 import { getIO } from '../socket/index.js';
+import { markLeadJoinedChannel } from './discordChannelService.js';
+import logger from '../config/logger.js';
 
 
 class DiscordBotService {
@@ -154,6 +157,7 @@ class DiscordBotService {
 
   /**
    * Handle new message creation
+   * Supports BOTH channel-based (deterministic) and DM-based (legacy) routing
    */
   private async handleMessageCreate(message: Message | PartialMessage) {
     try {
@@ -186,11 +190,101 @@ class DiscordBotService {
 
       // Check if message is a DM
       const isDM = message.channel.isDMBased();
-      console.log(`   DM: ${isDM}`);
+      console.log(`   DM: ${isDM}, Guild: ${message.guildId || 'N/A'}`);
 
-      let connection;
+      // ✅ NEW: Channel-based deterministic routing
+      if (!isDM && message.guildId) {
+        console.log('   🆕 Using CHANNEL-BASED routing (deterministic)');
+        await this.handleChannelMessage(message as Message);
+        return;
+      }
 
-      if (isDM) {
+      // ⚠️ LEGACY: DM-based routing (backward compatibility)
+      console.log('   ⚠️  Using DM-BASED routing (legacy)');
+      await this.handleDMMessage(message as Message);
+
+    } catch (error: any) {
+      console.error('❌ Error handling message create:', error);
+      console.error('   Stack:', error.stack);
+    }
+  }
+
+  /**
+   * ✅ NEW: Handle guild channel messages with deterministic routing
+   * Routing formula: guildId → DiscordConnection → whopCompanyId
+   *                  channelId → DiscordLeadChannel → leadId
+   */
+  private async handleChannelMessage(message: Message) {
+    try {
+      console.log(`   🔍 Channel-based routing: guildId=${message.guildId}, channelId=${message.channelId}`);
+
+      // 1. Find Discord connection by guildId (deterministic company routing)
+      const connection = await DiscordConnection.findOne({
+        discordGuildId: message.guildId,
+        isActive: true,
+      });
+
+      if (!connection) {
+        console.log(`   ❌ No active Discord connection found for guild ${message.guildId}`);
+        logger.warn(`Message received from unknown guild ${message.guildId}`);
+        return;
+      }
+
+      console.log(`   ✅ Found connection for company: ${connection.whopCompanyId}`);
+
+      // 2. Find lead channel by channelId (deterministic lead routing)
+      const leadChannel = await DiscordLeadChannel.findOne({
+        discordChannelId: message.channelId,
+        isActive: true,
+      });
+
+      if (!leadChannel) {
+        console.log(`   ⚠️  No lead channel mapping found for channel ${message.channelId}`);
+        logger.warn(`Message received from unmapped channel ${message.channelId} in guild ${message.guildId}`);
+        // Could be a system channel or other non-lead channel - skip
+        return;
+      }
+
+      console.log(`   ✅ Found lead channel: leadId=${leadChannel.leadId}`);
+
+      // 3. Verify whopCompanyId matches (multi-tenant isolation)
+      if (leadChannel.whopCompanyId !== connection.whopCompanyId) {
+        console.error(`   ❌ SECURITY: Company mismatch! Channel company=${leadChannel.whopCompanyId}, Guild company=${connection.whopCompanyId}`);
+        logger.error(`Company mismatch detected: channel=${leadChannel.whopCompanyId}, guild=${connection.whopCompanyId}`);
+        return;
+      }
+
+      // 4. Get the lead and mark as joined if this is their first message
+      const lead = await Lead.findById(leadChannel.leadId);
+      
+      if (lead && leadChannel.discordUserId === message.author.id && !lead.discordJoinedChannel) {
+        console.log(`   👋 Lead joined channel for the first time`);
+        await markLeadJoinedChannel(leadChannel.leadId);
+      }
+
+      // 5. Save message to database with deterministic ownership
+      await this.saveChannelMessage(
+        message,
+        leadChannel.userId, // CRM user who owns this lead
+        leadChannel.whopCompanyId,
+        leadChannel.leadId,
+        connection.discordGuildId!,
+        'incoming'
+      );
+
+      console.log(`   ✅ Channel message processed with deterministic routing`);
+    } catch (error) {
+      console.error('❌ Error handling channel message:', error);
+      logger.error('Error in handleChannelMessage:', error);
+    }
+  }
+
+  /**
+   * ⚠️ LEGACY: Handle DM messages (backward compatibility during migration)
+   * This method preserves the old DM-based flow
+   */
+  private async handleDMMessage(message: Message) {
+    try {
         // For DMs: Find the Discord connection that matches the RECIPIENT
         // The recipient is the Discord user that this DM was sent TO (not the sender)
         console.log('   🔍 Looking for Discord connection for DM recipient...');
@@ -201,9 +295,9 @@ class DiscordBotService {
         // If the sender is messaging our bot user, we need to find who owns this conversation
         
         // For incoming DMs, we need to find which team member is being contacted
-                                                                                                                                                                                                                                                                                            // Strategy: Find active connection first, then look for existing lead for that connection
+        // Strategy: Find active connection first, then look for existing lead for that connection
         console.log('   🔍 Finding active Discord connection...');
-        connection = await DiscordConnection.findOne({ isActive: true }).sort({ connectedAt: 1 });
+        let connection = await DiscordConnection.findOne({ isActive: true }).sort({ connectedAt: 1 });
         
         if (!connection) {                                                
           console.log('   ❌ No active Discord connection found');
@@ -253,25 +347,6 @@ class DiscordBotService {
             console.log('   ❌ No users found in database - Cannot create connection');
           }
         }
-      } else {
-        // For guild messages, find connection for specific guild
-        console.log(`   🔍 Looking for connection for guild ${message.guildId}...`);
-        connection = await this.findConnectionForGuild(message.guildId || '');
-        console.log(`   ${connection ? '✅' : '❌'} Guild connection found`);
-        
-        if (connection) {
-          // Validate the connection's userId exists
-          const { User } = await import('../models');
-          const user = await User.findById(connection.userId);
-          if (!user) {
-            console.error(`   ❌ Connection userId ${connection.userId} does not exist! Skipping message.`);
-            console.error(`   💡 Solution: Disconnect and reconnect Discord to fix the connection.`);
-            connection = null;
-          } else {
-            console.log(`   ✅ Connection userId ${connection.userId} validated - user exists: ${user.email}`);
-          }
-        }
-      }
 
       if (!connection) {
         console.log('   ⚠️  FINAL: No connection exists - message will NOT be saved');
@@ -290,10 +365,9 @@ class DiscordBotService {
       console.log(`   💾 Saving message to database with userId: ${messageUserId}...`);
       await this.saveMessage(message, messageUserId, 'incoming', lead ? String(lead._id) : undefined);
 
-      console.log('   ✅ Message processing complete\n');
-
+      console.log('   ✅ DM message processing complete\n');
     } catch (error: any) {
-      console.error('❌ Error handling message create:', error);
+      console.error('❌ Error handling DM message:', error);
       console.error('   Stack:', error.stack);
     }
   }
@@ -534,6 +608,115 @@ class DiscordBotService {
     throw error;
   }
 }
+
+  /**
+   * ✅ NEW: Save channel message with deterministic ownership
+   * Used for server-based channel messages (not DMs)
+   */
+  private async saveChannelMessage(
+    message: Message,
+    userId: string,
+    whopCompanyId: string,
+    leadId: string,
+    guildId: string,
+    direction: 'incoming' | 'outgoing'
+  ) {
+    try {
+      // Extract attachments
+      const attachments = message.attachments.map((att) => ({
+        url: att.url,
+        filename: att.name || 'unknown',
+        size: att.size,
+        contentType: att.contentType || 'unknown',
+      }));
+
+      // Save message with full deterministic ownership
+      const updateData: any = {
+        $set: {
+          userId,
+          whopCompanyId, // ✅ Multi-tenant isolation
+          discordGuildId: guildId, // ✅ Server identification
+          leadId,
+          discordChannelId: message.channelId,
+          authorDiscordId: message.author.id,
+          authorUsername: message.author.tag,
+          content: message.content || '[No content]',
+          direction,
+          metadata: {
+            guildId: message.guildId,
+            channelName: (message.channel as any).name || 'Unknown Channel',
+            timestamp: message.createdTimestamp,
+          },
+          attachments,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          discordMessageId: message.id,
+          isRead: direction === 'outgoing' ? true : false,
+          tags: [],
+          createdAt: new Date(),
+        },
+      };
+
+      const discordMessage = await DiscordMessage.findOneAndUpdate(
+        { discordMessageId: message.id },
+        updateData,
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        }
+      );
+
+      // Update lead's last contact date
+      await Lead.findByIdAndUpdate(leadId, {
+        lastContactDate: new Date(),
+      });
+
+      // Update lead channel stats
+      await DiscordLeadChannel.findOneAndUpdate(
+        { leadId, isActive: true },
+        {
+          lastMessageAt: new Date(),
+          $inc: { messageCount: 1 },
+        }
+      );
+
+      // Emit Socket.IO event
+      try {
+        const { getIO } = await import('../socket/index.js');
+        const io = getIO();
+
+        const room = `lead:${leadId}`;
+        console.log(`📡 Emitting Socket.IO event to room: ${room}`);
+        console.log(`   Message: "${discordMessage.content.substring(0, 30)}..."`);
+        console.log(`   Direction: ${discordMessage.direction}`);
+        console.log(`   LeadId: ${leadId}`);
+        
+        io.to(room).emit("discord:message", {
+          ...discordMessage.toJSON(),
+        });
+        
+        console.log(`   ✅ Socket event emitted successfully`);
+      } catch (socketError) {
+        console.error("❌ Socket.IO emit failed:", socketError);
+      }
+
+      console.log(`💾 Saved channel message: ${message.id} with deterministic ownership (company=${whopCompanyId}, lead=${leadId})`);
+      return discordMessage;
+    } catch (error: any) {
+      // Handle duplicate key errors gracefully
+      if (error.code === 11000 || error.codeName === 'DuplicateKey') {
+        console.log(`⚠️ Message ${message.id} already exists, fetching existing record`);
+        const existing = await DiscordMessage.findOne({ discordMessageId: message.id });
+        if (existing) {
+          return existing;
+        }
+      }
+      console.error('Error saving channel message:', error);
+      throw error;
+    }
+  }
 
   /**
    * Check if message is from a new lead and create if needed

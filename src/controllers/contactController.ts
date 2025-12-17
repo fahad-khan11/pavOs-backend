@@ -1,19 +1,21 @@
 import { Response } from 'express';
-import { Contact, Activity } from '../models/index.js';
+import { Contact, Activity, User } from '../models/index.js';
 import { AuthRequest } from '../types/index.js';
 import { successResponse, errorResponse, paginatedResponse } from '../utils/response.js';
 
 /**
  * Get all contacts with search and filters
  * GET /api/v1/contacts?search=&status=&page=1&limit=20
+ * 
+ * ✅ REFACTORED: Uses whopCompanyId for tenant isolation
  */
 export const getAllContacts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { search, status, page = 1, limit = 20 } = req.query;
 
-    // Build query
-    const query: any = { userId };
+    // ✅ REFACTORED: Build query with whopCompanyId (strict tenant boundary)
+    const query: any = { whopCompanyId };
 
     // Search by name, email, or company
     if (search) {
@@ -52,13 +54,16 @@ export const getAllContacts = async (req: AuthRequest, res: Response): Promise<v
 /**
  * Get contact by ID
  * GET /api/v1/contacts/:id
+ * 
+ * ✅ REFACTORED: Uses whopCompanyId for tenant isolation
  */
 export const getContactById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
 
-    const contact = await Contact.findOne({ _id: id, userId });
+    // ✅ REFACTORED: Filter by whopCompanyId for security
+    const contact = await Contact.findOne({ _id: id, whopCompanyId });
 
     if (!contact) {
       errorResponse(res, 'Contact not found', 404);
@@ -74,21 +79,33 @@ export const getContactById = async (req: AuthRequest, res: Response): Promise<v
 /**
  * Create new contact
  * POST /api/v1/contacts
+ * 
+ * ✅ REFACTORED: Uses whopCompanyId and whopUserId
  */
 export const createContact = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
     const contactData = req.body;
 
-    // Create contact
+    // ✅ REFACTORED: Resolve internal userId from Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+
+    // Create contact with whopCompanyId
     const contact = await Contact.create({
       ...contactData,
-      userId,
+      userId: user._id.toString(),
+      whopCompanyId,
     });
 
     // Log activity
     await Activity.create({
-      userId,
+      userId: user._id.toString(),
+      whopCompanyId,
       type: 'contact_created',
       title: 'Contact Created',
       description: `Created contact: ${contact.name}`,
@@ -105,15 +122,18 @@ export const createContact = async (req: AuthRequest, res: Response): Promise<vo
 /**
  * Update contact
  * PUT /api/v1/contacts/:id
+ * 
+ * ✅ REFACTORED: Uses whopCompanyId for tenant isolation
  */
 export const updateContact = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
     const updates = req.body;
 
+    // ✅ REFACTORED: Filter by whopCompanyId for security
     const contact = await Contact.findOneAndUpdate(
-      { _id: id, userId },
+      { _id: id, whopCompanyId },
       updates,
       { new: true, runValidators: true }
     );
@@ -132,13 +152,16 @@ export const updateContact = async (req: AuthRequest, res: Response): Promise<vo
 /**
  * Delete contact
  * DELETE /api/v1/contacts/:id
+ * 
+ * ✅ REFACTORED: Uses whopCompanyId for tenant isolation
  */
 export const deleteContact = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
 
-    const contact = await Contact.findOneAndDelete({ _id: id, userId });
+    // ✅ REFACTORED: Filter by whopCompanyId for security
+    const contact = await Contact.findOneAndDelete({ _id: id, whopCompanyId });
 
     if (!contact) {
       errorResponse(res, 'Contact not found', 404);

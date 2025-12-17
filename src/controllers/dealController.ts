@@ -1,19 +1,20 @@
 import { Response } from 'express';
-import { Deal, Activity, TelemetryEvent, Contact } from '../models/index.js';
+import { Deal, Activity, TelemetryEvent, Contact, User } from '../models/index.js';
 import { AuthRequest } from '../types/index.js';
 import { successResponse, errorResponse, paginatedResponse } from '../utils/response.js';
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get all deals with filters
  * GET /api/v1/deals?stage=&status=&page=1&limit=20
  */
 export const getAllDeals = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { stage, status, page = 1, limit = 100 } = req.query;
 
-    // Build query
-    const query: any = { creatorId: userId };
+    // ✅ SECURITY: Filter by whopCompanyId to enforce multi-tenant isolation
+    const query: any = { whopCompanyId };
 
     // Filter by stage
     if (stage && stage !== 'all') {
@@ -46,15 +47,17 @@ export const getAllDeals = async (req: AuthRequest, res: Response): Promise<void
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Get deal by ID
  * GET /api/v1/deals/:id
  */
 export const getDealById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
 
-    const deal = await Deal.findOne({ _id: id, creatorId: userId });
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
+    const deal = await Deal.findOne({ _id: id, whopCompanyId });
 
     if (!deal) {
       errorResponse(res, 'Deal not found', 404);
@@ -68,33 +71,45 @@ export const getDealById = async (req: AuthRequest, res: Response): Promise<void
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Create new deal
  * POST /api/v1/deals
  */
 export const createDeal = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
     const dealData = req.body;
 
-    // If contactId is provided, get contact details
+    // ✅ Resolve internal userId from Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    const userId = user._id.toString();
+
+    // If contactId is provided, get contact details (enforce tenant boundary)
     if (dealData.contactId) {
-      const contact = await Contact.findOne({ _id: dealData.contactId, userId });
+      const contact = await Contact.findOne({ _id: dealData.contactId, whopCompanyId });
       if (contact) {
         dealData.contactName = contact.name;
         dealData.company = contact.company;
       }
     }
 
-    // Create deal
+    // Create deal with whopCompanyId for multi-tenant isolation
     const deal = await Deal.create({
       ...dealData,
       creatorId: userId,
+      whopCompanyId,
       createdDate: new Date(),
     });
 
     // Log activity
     await Activity.create({
       userId,
+      whopCompanyId,
       type: 'deal_created',
       title: 'Deal Created',
       description: `Created deal: ${deal.brandName}`,
@@ -103,10 +118,11 @@ export const createDeal = async (req: AuthRequest, res: Response): Promise<void>
     });
 
     // Check if this is user's first deal
-    const dealCount = await Deal.countDocuments({ creatorId: userId });
+    const dealCount = await Deal.countDocuments({ whopCompanyId });
     if (dealCount === 1) {
       await TelemetryEvent.create({
         userId,
+        whopCompanyId,
         eventType: 'first_deal_created',
         eventData: { dealValue: deal.dealValue, brandName: deal.brandName },
       });
@@ -119,26 +135,37 @@ export const createDeal = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Update deal
  * PUT /api/v1/deals/:id
  */
 export const updateDeal = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
     const updates = req.body;
 
-    // If contactId is being updated, get contact details
+    // ✅ Resolve internal userId from Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    const userId = user._id.toString();
+
+    // If contactId is being updated, get contact details (enforce tenant boundary)
     if (updates.contactId) {
-      const contact = await Contact.findOne({ _id: updates.contactId, userId });
+      const contact = await Contact.findOne({ _id: updates.contactId, whopCompanyId });
       if (contact) {
         updates.contactName = contact.name;
         updates.company = contact.company;
       }
     }
 
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
     const deal = await Deal.findOneAndUpdate(
-      { _id: id, creatorId: userId },
+      { _id: id, whopCompanyId },
       updates,
       { new: true, runValidators: true }
     );
@@ -151,6 +178,7 @@ export const updateDeal = async (req: AuthRequest, res: Response): Promise<void>
     // Log activity
     await Activity.create({
       userId,
+      whopCompanyId,
       type: 'deal_updated',
       title: 'Deal Updated',
       description: `Updated deal: ${deal.brandName}`,
@@ -165,17 +193,28 @@ export const updateDeal = async (req: AuthRequest, res: Response): Promise<void>
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Update deal stage (for pipeline drag and drop)
  * PATCH /api/v1/deals/:id/stage
  */
 export const updateDealStage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
     const { stage } = req.body;
 
+    // ✅ Resolve internal userId from Whop identifiers
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    const userId = user._id.toString();
+
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
     const deal = await Deal.findOneAndUpdate(
-      { _id: id, creatorId: userId },
+      { _id: id, whopCompanyId },
       { stage },
       { new: true, runValidators: true }
     );
@@ -188,6 +227,7 @@ export const updateDealStage = async (req: AuthRequest, res: Response): Promise<
     // Log activity
     await Activity.create({
       userId,
+      whopCompanyId,
       type: 'deal_updated',
       title: 'Deal Stage Updated',
       description: `Moved ${deal.brandName} to ${stage}`,
@@ -200,6 +240,7 @@ export const updateDealStage = async (req: AuthRequest, res: Response): Promise<
     if (stage === 'Completed') {
       await TelemetryEvent.create({
         userId,
+        whopCompanyId,
         eventType: 'deal_won',
         eventData: { dealValue: deal.dealValue, brandName: deal.brandName },
       });
@@ -212,15 +253,17 @@ export const updateDealStage = async (req: AuthRequest, res: Response): Promise<
 };
 
 /**
+ * ✅ REFACTORED: Whop-only authentication
  * Delete deal
  * DELETE /api/v1/deals/:id
  */
 export const deleteDeal = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.userId!;
+    const whopCompanyId = req.whopCompanyId!;
     const { id } = req.params;
 
-    const deal = await Deal.findOneAndDelete({ _id: id, creatorId: userId });
+    // ✅ SECURITY: Filter by whopCompanyId to prevent cross-tenant access
+    const deal = await Deal.findOneAndDelete({ _id: id, whopCompanyId });
 
     if (!deal) {
       errorResponse(res, 'Deal not found', 404);
