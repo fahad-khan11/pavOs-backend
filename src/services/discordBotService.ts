@@ -254,7 +254,7 @@ class DiscordBotService {
         return;
       }
 
-      // 4. Get the lead and mark as joined if this is their first message
+      // 4. Get the lead and mark as joined if this is their first 
       const lead = await Lead.findById(leadChannel.leadId);
       
       if (lead && leadChannel.discordUserId === message.author.id && !lead.discordJoinedChannel) {
