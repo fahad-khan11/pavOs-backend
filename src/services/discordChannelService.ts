@@ -68,61 +68,52 @@ export async function createLeadChannel(
       throw new Error(`Bot is not in guild ${connection.discordGuildId}`);
     }
 
-    // 4. Find or create the intake channel
+    // 4. Find the intake channel (try to find existing "leads" channel first, then fall back to any text channel)
     let intakeChannel = guild.channels.cache.find(
       channel => channel.name === INTAKE_CHANNEL_NAME && channel.type === ChannelType.GuildText
     ) as TextChannel | undefined;
 
+    // If no "leads" channel exists, try to find any text channel the bot can access
     if (!intakeChannel) {
-      logger.info(`Intake channel "${INTAKE_CHANNEL_NAME}" not found, creating it...`);
+      logger.warn(`Intake channel "${INTAKE_CHANNEL_NAME}" not found, looking for alternative text channel...`);
       
-      // Create the intake channel with proper permissions
-      const permissionOverwrites: any[] = [
-        {
-          // Deny @everyone from viewing the intake channel (makes it private)
-          id: guild.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        },
-        {
-          // Allow bot to view, send messages, and manage threads
-          id: client.user!.id,
-          allow: [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory,
-            PermissionFlagsBits.CreatePublicThreads,
-            PermissionFlagsBits.CreatePrivateThreads,
-            PermissionFlagsBits.ManageThreads,
-          ],
-        },
-      ];
+      // Find the first text channel where bot has permission to create threads
+      const availableChannels = guild.channels.cache.filter(channel => {
+        if (channel.type !== ChannelType.GuildText) return false;
+        
+        const permissions = channel.permissionsFor(client.user!);
+        return permissions?.has(PermissionFlagsBits.ViewChannel) && 
+               permissions?.has(PermissionFlagsBits.SendMessages) &&
+               (permissions?.has(PermissionFlagsBits.CreatePrivateThreads) || 
+                permissions?.has(PermissionFlagsBits.CreatePublicThreads));
+      });
 
-      // Add CRM Staff role if configured
-      const crmStaffRoleId = process.env.DISCORD_CRM_STAFF_ROLE_ID;
-      if (crmStaffRoleId) {
-        const staffRole = guild.roles.cache.get(crmStaffRoleId);
-        if (staffRole) {
-          permissionOverwrites.push({
-            id: crmStaffRoleId,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory,
-              PermissionFlagsBits.ManageThreads,
-            ],
-          });
-          logger.info(`Adding CRM Staff role ${staffRole.name} to intake channel permissions`);
+      if (availableChannels.size > 0) {
+        intakeChannel = availableChannels.first() as TextChannel;
+        logger.info(`Using existing channel "${intakeChannel.name}" for lead threads (bot lacks permission to create channels)`);
+      } else {
+        // Last resort: use general channel or first available text channel
+        const generalChannel = guild.channels.cache.find(
+          channel => (channel.name === 'general' || channel.name === 'General') && channel.type === ChannelType.GuildText
+        ) as TextChannel | undefined;
+
+        if (generalChannel) {
+          intakeChannel = generalChannel;
+          logger.warn(`Using "general" channel as fallback for lead threads`);
+        } else {
+          // Just grab the first text channel we can find
+          const firstTextChannel = guild.channels.cache.find(
+            channel => channel.type === ChannelType.GuildText
+          ) as TextChannel | undefined;
+
+          if (firstTextChannel) {
+            intakeChannel = firstTextChannel;
+            logger.warn(`Using first available text channel "${firstTextChannel.name}" for lead threads`);
+          } else {
+            throw new Error(`No suitable text channel found in guild. Please manually create a "#leads" channel or grant the bot "Manage Channels" permission.`);
+          }
         }
       }
-
-      intakeChannel = await guild.channels.create({
-        name: INTAKE_CHANNEL_NAME,
-        type: ChannelType.GuildText,
-        reason: 'Intake channel for lead threads',
-        permissionOverwrites,
-      }) as TextChannel;
-
-      logger.info(`✅ Created intake channel: ${intakeChannel.name} (${intakeChannel.id})`);
     }
 
     // 5. Get lead details for thread naming
@@ -134,16 +125,35 @@ export async function createLeadChannel(
     // 6. Generate thread name
     const threadName = generateThreadName(lead);
 
-    // 7. Create a private thread inside the intake channel
-    const thread = await intakeChannel.threads.create({
-      name: threadName,
-      autoArchiveDuration: 10080, // 7 days (max for non-boosted servers)
-      type: ChannelType.PrivateThread, // Private thread (only visible to invited members)
-      reason: `Private lead thread for ${lead.name} (${lead.email || lead.discordUsername})`,
-      invitable: false, // Don't allow members to invite others
-    });
-
-    logger.info(`Created private thread: ${thread.name} (${thread.id}) for lead ${leadId}`);
+    // 7. Create a thread inside the intake channel
+    // Try private thread first, fall back to public if permissions don't allow private
+    let thread;
+    try {
+      thread = await intakeChannel.threads.create({
+        name: threadName,
+        autoArchiveDuration: 10080, // 7 days (max for non-boosted servers)
+        type: ChannelType.PrivateThread, // Private thread (only visible to invited members)
+        reason: `Private lead thread for ${lead.name} (${lead.email || lead.discordUsername})`,
+        invitable: false, // Don't allow members to invite others
+      });
+      logger.info(`Created private thread: ${thread.name} (${thread.id}) for lead ${leadId}`);
+    } catch (privateThreadError: any) {
+      // If private thread creation fails (e.g., missing permissions), try public thread
+      logger.warn(`Failed to create private thread, trying public thread:`, privateThreadError.message);
+      
+      try {
+        thread = await intakeChannel.threads.create({
+          name: threadName,
+          autoArchiveDuration: 10080,
+          type: ChannelType.PublicThread, // Public thread (visible to all who can see parent channel)
+          reason: `Public lead thread for ${lead.name} (${lead.email || lead.discordUsername})`,
+        });
+        logger.info(`Created public thread: ${thread.name} (${thread.id}) for lead ${leadId}`);
+      } catch (publicThreadError: any) {
+        logger.error(`Failed to create both private and public threads:`, publicThreadError);
+        throw new Error(`Cannot create thread in channel "${intakeChannel.name}". Bot may lack thread creation permissions.`);
+      }
+    }
 
     // 8. Set permissions on the thread
     // Note: Private threads inherit permissions from parent channel, but we can add specific members
