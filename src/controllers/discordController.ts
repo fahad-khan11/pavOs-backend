@@ -146,7 +146,7 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
       console.error('❌ Bot does not have access to any of user\'s guilds!');
       
       // Generate bot invite URL
-      const botInviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&permissions=275146468368&scope=bot`;
+      const botInviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&permissions=${process.env.DISCORD_PERMISSIONS}&scope=bot`;
       
       errorResponse(
         res,
@@ -216,23 +216,38 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
     const whopCompanyId = user.whopCompanyId;
     console.log(`🏢 User's Whop Company ID: ${whopCompanyId || 'NOT SET'}`);
 
-    // MULTI-TENANT LOGIC: Check if company already has a Discord guild set
+    // ✅ FIX: MULTI-TENANT LOGIC with proper validation
+    // Check if company already has a Discord guild set BY ANOTHER ACTIVE USER
     let companyGuildId = null;
     let companyGuildName = null;
     
     if (whopCompanyId) {
-      // Find any active Discord connection for this company
+      // Find any OTHER active Discord connection for this company (exclude current user)
       const companyConnection = await DiscordConnection.findOne({
+        userId: { $ne: userId }, // ✅ FIX: Exclude current user to avoid self-reference
         whopCompanyId,
         isActive: true,
         discordGuildId: { $exists: true, $ne: null },
       }).sort({ connectedAt: 1 }); // Get the FIRST connection (company owner's)
       
       if (companyConnection) {
-        companyGuildId = companyConnection.discordGuildId;
-        companyGuildName = companyConnection.discordGuildName;
-        console.log(`🏢 Found company Discord guild: ${companyGuildName} (${companyGuildId})`);
-        console.log(`📌 Team member will inherit this guild instead of their own`);
+        // ✅ FIX: Verify bot still has access to this guild before inheriting
+        try {
+          const botClient = discordBotService.getClient();
+          const isAccessible = botClient && botClient.guilds.cache.has(companyConnection.discordGuildId!);
+          
+          if (isAccessible) {
+            companyGuildId = companyConnection.discordGuildId;
+            companyGuildName = companyConnection.discordGuildName;
+            console.log(`🏢 Found company Discord guild: ${companyGuildName} (${companyGuildId})`);
+            console.log(`📌 Team member will inherit this guild instead of their own`);
+          } else {
+            console.log(`⚠️  Company guild ${companyConnection.discordGuildId} is no longer accessible by bot`);
+            console.log(`   Will use user's new guild instead`);
+          }
+        } catch (error) {
+          console.log(`⚠️  Could not verify company guild access, will use user's guild`);
+        }
       } else {
         console.log(`🆕 First user in company connecting Discord - will set company guild`);
       }
@@ -254,12 +269,35 @@ export const handleOAuthCallback = async (req: AuthRequest, res: Response): Prom
       console.log(`✅ Using user's guild: ${selectedGuildName} (${selectedGuildId})`);
     }
 
+    // ✅ FIX: Verify the selected guild is accessible by bot before saving
+    if (selectedGuildId) {
+      const botClient = discordBotService.getClient();
+      const isAccessible = botClient && botClient.guilds.cache.has(selectedGuildId);
+      
+      if (!isAccessible) {
+        console.error(`❌ Bot does not have access to selected guild: ${selectedGuildId}`);
+        console.error(`   User must invite bot to this Discord server first`);
+        
+        const botInviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&permissions=${process.env.DISCORD_PERMISSIONS}&scope=bot`;
+        
+        errorResponse(
+          res,
+          `Discord bot is not in the server "${selectedGuildName}". Please invite the bot first using this link: ${botInviteUrl}`,
+          400
+        );
+        return;
+      }
+    }
+
     // Check if connection already exists for this userId
     let connection = await DiscordConnection.findOne({ userId });
 
     if (connection) {
-      // Update existing connection
+      // ✅ FIX: Update existing connection with complete data refresh
       console.log(`🔄 Updating existing Discord connection for userId: ${userId}`);
+      console.log(`   Previous Guild: ${connection.discordGuildName} (${connection.discordGuildId})`);
+      console.log(`   New Guild: ${selectedGuildName} (${selectedGuildId})`);
+      
       connection.discordUserId = discordUser.id;
       connection.discordUsername = `${discordUser.username}#${discordUser.discriminator}`;
       connection.discordGuildId = selectedGuildId;
@@ -461,8 +499,22 @@ export const disconnectDiscord = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
+    console.log(`🔌 Disconnecting Discord for userId: ${userId}`);
+    console.log(`   Old Guild: ${connection.discordGuildName} (${connection.discordGuildId})`);
+
+    // ✅ FIX: Clear all Discord-related data on disconnect
     connection.isActive = false;
+    connection.discordGuildId = undefined;
+    connection.discordGuildName = undefined;
+    connection.accessToken = undefined;
+    connection.refreshToken = undefined;
+    connection.lastSyncAt = undefined;
+    connection.syncedMembersCount = 0;
+    connection.syncedChannelsCount = 0;
+    
     await connection.save();
+
+    console.log(`✅ Discord connection cleared and deactivated`);
 
     successResponse(res, null, 'Discord disconnected successfully');
   } catch (error: any) {
@@ -495,23 +547,45 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // ✅ whopCompanyId already available from earlier user resolution
-
     if (!connection.discordGuildId) {
       errorResponse(res, 'No guild associated with this connection', 400);
       return;
     }
 
-    console.log('Starting Discord member sync for user:', userId);
-    console.log('Guild ID:', connection.discordGuildId);
-    console.log('Guild Name:', connection.discordGuildName);
+    console.log('\n🔄 Starting Discord member sync');
+    console.log(`   User ID: ${userId}`);
+    console.log(`   Whop Company ID: ${whopCompanyId}`);
+    console.log(`   Guild ID: ${connection.discordGuildId}`);
+    console.log(`   Guild Name: ${connection.discordGuildName}`);
 
-    // Validate guild access first
+    // ✅ FIX: Validate bot has access to the guild BEFORE attempting sync
+    const botClient = discordBotService.getClient();
+    if (!botClient || !discordBotService.isActive()) {
+      errorResponse(res, 'Discord bot is not running. Please contact support.', 500);
+      return;
+    }
+
+    const hasAccess = botClient.guilds.cache.has(connection.discordGuildId);
+    if (!hasAccess) {
+      console.error(`❌ Bot does not have access to guild: ${connection.discordGuildId}`);
+      const botInviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&permissions=${process.env.DISCORD_PERMISSIONS}&scope=bot`;
+      
+      errorResponse(
+        res,
+        `Discord bot is not in the server "${connection.discordGuildName}". Please invite the bot first: ${botInviteUrl}`,
+        400
+      );
+      return;
+    }
+
+    console.log(`   ✅ Bot has access to guild`);
+
+    // Validate guild access via Discord API
     try {
       const guildInfo = await discordService.getGuild(connection.discordGuildId);
-      console.log(`✅ Bot has access to guild: ${guildInfo.name} (${guildInfo.id})`);
+      console.log(`   ✅ Bot has API access to guild: ${guildInfo.name} (${guildInfo.id})`);
     } catch (error: any) {
-      console.error('❌ Bot cannot access guild:', error.response?.data || error.message);
+      console.error('   ❌ Bot cannot access guild via API:', error.response?.data || error.message);
       errorResponse(
         res,
         `Discord bot cannot access this guild. Please make sure the bot is invited to the server. Guild ID: ${connection.discordGuildId}`,
@@ -523,7 +597,7 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
     // Fetch members from Discord
     const members = await discordService.getGuildMembers(connection.discordGuildId, 1000);
 
-    console.log(`Found ${members.length} members from Discord`);
+    console.log(`   📊 Found ${members.length} members from Discord`);
 
     let createdCount = 0;
     let updatedCount = 0;
@@ -733,6 +807,31 @@ export const sendDiscordMessage = async (req: AuthRequest, res: Response): Promi
     // ✅ NEW: Channel-based sending (deterministic routing)
     if (leadId) {
       console.log(`📤 Sending message to lead ${leadId} via dedicated channel (channel-based routing)`);
+      
+      // ✅ FIX: Validate bot has access to guild before attempting channel creation
+      if (!connection.discordGuildId) {
+        errorResponse(res, 'No Discord server linked. Please reconnect Discord.', 400);
+        return;
+      }
+
+      const hasGuildAccess = client.guilds.cache.has(connection.discordGuildId);
+      if (!hasGuildAccess) {
+        console.error(`❌ Bot does not have access to guild: ${connection.discordGuildId}`);
+        console.error(`   Guild Name: ${connection.discordGuildName || 'Unknown'}`);
+        console.error(`   This likely means the connection has stale data from an old server.`);
+        console.error(`   User needs to disconnect and reconnect to a valid server.`);
+        
+        const botInviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&permissions=${process.env.DISCORD_PERMISSIONS}&scope=bot`;
+        
+        errorResponse(
+          res,
+          `Discord bot is not in the server "${connection.discordGuildName || 'Unknown'}". Please disconnect and reconnect Discord, or invite the bot: ${botInviteUrl}`,
+          400
+        );
+        return;
+      }
+
+      console.log(`✅ Bot has access to guild: ${connection.discordGuildName} (${connection.discordGuildId})`);
       
       try {
         // ✅ AUTO-CREATE: Check if channel exists, create if not
@@ -1092,6 +1191,89 @@ export const archiveChannel = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
+/**
+ * ✅ NEW: Debug endpoint to view all Discord connections and validate state
+ * GET /api/v1/integrations/discord/debug
+ */
+export const debugDiscordConnections = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const whopUserId = req.whopUserId!;
+    const whopCompanyId = req.whopCompanyId!;
+    
+    const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
+    if (!user) {
+      errorResponse(res, 'User not found', 404);
+      return;
+    }
+    
+    const userId = user._id.toString();
+
+    // Get all connections for this user (active and inactive)
+    const allConnections = await DiscordConnection.find({ userId }).sort({ connectedAt: -1 });
+    
+    // Get bot status
+    const botActive = discordBotService.isActive();
+    const botClient = discordBotService.getClient();
+    const botGuilds = botClient ? Array.from(botClient.guilds.cache.values()).map(g => ({
+      id: g.id,
+      name: g.name,
+      memberCount: g.memberCount,
+    })) : [];
+
+    // Get company connections if in a company
+    let companyConnections: any[] = [];
+    if (whopCompanyId) {
+      companyConnections = await DiscordConnection.find({ 
+        whopCompanyId, 
+        isActive: true 
+      }).sort({ connectedAt: 1 });
+    }
+
+    const debugInfo = {
+      user: {
+        userId,
+        email: user.email,
+        whopCompanyId,
+      },
+      bot: {
+        active: botActive,
+        guildCount: botGuilds.length,
+        guilds: botGuilds,
+      },
+      connections: {
+        total: allConnections.length,
+        active: allConnections.filter(c => c.isActive).length,
+        inactive: allConnections.filter(c => !c.isActive).length,
+        list: allConnections.map(c => ({
+          id: c._id,
+          isActive: c.isActive,
+          discordGuildId: c.discordGuildId,
+          discordGuildName: c.discordGuildName,
+          discordUsername: c.discordUsername,
+          whopCompanyId: c.whopCompanyId,
+          connectedAt: c.connectedAt,
+          botHasAccess: c.discordGuildId ? botClient?.guilds.cache.has(c.discordGuildId) : false,
+        })),
+      },
+      company: {
+        whopCompanyId,
+        connections: companyConnections.map(c => ({
+          userId: c.userId,
+          discordGuildId: c.discordGuildId,
+          discordGuildName: c.discordGuildName,
+          connectedAt: c.connectedAt,
+          botHasAccess: c.discordGuildId ? botClient?.guilds.cache.has(c.discordGuildId) : false,
+        })),
+      },
+    };
+
+    successResponse(res, debugInfo, 'Discord connection debug info');
+  } catch (error: any) {
+    console.error('Debug Discord connections error:', error);
+    errorResponse(res, error.message || 'Failed to get debug info', 500);
+  }
+};
+
 export default {
   getConnectionStatus,
   getOAuthURL,
@@ -1108,4 +1290,6 @@ export default {
   getChannelForLead,
   getCompanyChannelsList,
   archiveChannel,
+  // ✅ NEW: Debug endpoint
+  debugDiscordConnections,
 };

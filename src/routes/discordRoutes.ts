@@ -15,6 +15,8 @@ import {
   getChannelForLead,
   getCompanyChannelsList,
   archiveChannel,
+  // ✅ NEW: Debug endpoint
+  debugDiscordConnections,
 } from '../controllers/discordController.js';
 import { authenticate } from '../middlewares/auth.js';
 
@@ -31,6 +33,9 @@ router.use(authenticate);
 router.get('/status', getConnectionStatus);
 router.get('/oauth-url', getOAuthURL);
 router.post('/disconnect', disconnectDiscord);
+
+// ✅ NEW: Debug endpoint
+router.get('/debug', debugDiscordConnections);
 
 // Member sync
 router.post('/sync-members', syncDiscordMembers);
