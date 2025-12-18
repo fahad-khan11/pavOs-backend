@@ -49,13 +49,16 @@ export async function createLeadChannel(
     }
 
     // 2. Get the Discord connection for this company
+    // IMPORTANT: Use the connection for the CURRENT USER, not just any user in the company
+    // This ensures we use the correct Discord server when multiple users have different servers
     const connection = await DiscordConnection.findOne({
+      userId,
       whopCompanyId,
       isActive: true,
-    });
+    }).sort({ updatedAt: -1 }); // Get the most recently updated connection
 
     if (!connection) {
-      throw new Error(`No active Discord connection found for company ${whopCompanyId}`);
+      throw new Error(`No active Discord connection found for user ${userId} in company ${whopCompanyId}`);
     }
 
     if (!connection.discordGuildId) {
