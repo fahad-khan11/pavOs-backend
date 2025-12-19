@@ -718,7 +718,8 @@ export const getDiscordMessages = async (req: AuthRequest, res: Response): Promi
     const userId = user._id.toString();
     const { leadId, channelId, isRead, limit = 50, page = 1 } = req.query;
 
-    const query: any = { userId };
+    // ✅ FIXED: Use whopCompanyId for proper multi-tenant scoping
+    const query: any = { whopCompanyId };
     if (leadId) query.leadId = leadId;
     if (channelId) query.discordChannelId = channelId;
     if (isRead !== undefined) query.isRead = isRead === 'true';
