@@ -612,25 +612,16 @@ export const syncDiscordMembers = async (req: AuthRequest, res: Response): Promi
           continue;
         }
 
-        // ✅ FIXED: Check if lead already exists for THIS user AND this Discord user
-        // This prevents creating duplicate leads when multiple users connect to same guild
+        // ✅ MULTI-TENANT FIX: Check if lead already exists for THIS company AND this Discord user
+        // This allows the same Discord user to be a lead in multiple companies
         const existingLead = await Lead.findOne({
-          userId,  // Only this user's leads
+          whopCompanyId,  // THIS company's leads
           discordUserId: member.user.id,  // For this Discord member
         });
         
-        // ✅ SECURITY: Also check if this Discord user belongs to a DIFFERENT user
-        // If someone else already owns this lead, skip it to prevent conflicts
-        const leadOwnedByOtherUser = await Lead.findOne({
-          userId: { $ne: userId },  // Different user
-          discordUserId: member.user.id,  // Same Discord member
-        });
-        
-        if (leadOwnedByOtherUser) {
-          console.log(`⚠️  Skipping ${member.user.username} - already owned by another user`);
-          skippedCount++;
-          continue;
-        }
+        // ✅ MULTI-TENANT: Same Discord user can be a lead in different companies
+        // No need to check if owned by other users - each company manages their own leads
+        // Example: Discord user "john#1234" can be a lead in Company A AND Company B
 
         const leadData: any = {
           userId,
