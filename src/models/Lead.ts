@@ -156,6 +156,16 @@ leadSchema.index({ discordUserId: 1 }, { sparse: true });
 leadSchema.index({ whopCompanyId: 1, status: 1 });
 leadSchema.index({ whopCompanyId: 1, source: 1 });
 leadSchema.index({ whopCompanyId: 1, createdAt: -1 });
+// ✅ MULTI-TENANT FIX: Ensure same Discord user can exist in different companies
+// But prevent duplicate Discord users within the same company
+leadSchema.index(
+  { whopCompanyId: 1, discordUserId: 1 }, 
+  { 
+    unique: true, 
+    sparse: true,  // Allows null discordUserId (for non-Discord leads)
+    name: 'unique_discord_user_per_company'
+  }
+);
 
 // Virtual for id field
 leadSchema.virtual('id').get(function () {
