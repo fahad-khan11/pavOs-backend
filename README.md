@@ -1,16 +1,28 @@
-# PaveOS Backend
+# pavOS Backend
 
-CRM and automation app backend for creators to manage brand deals, payments, and deliverables.
+**Whop-Native CRM** for creators to manage leads, deals, payments, and deliverables.
+
+## ✨ Key Features
+
+- 🟣 **Whop-Native Integration** - Auto-import members, native messaging
+- 💬 **Smart Routing** - Automatically routes to Whop or Discord
+- 🏢 **Multi-Tenant** - Secure isolation per Whop company
+- 📊 **Deal Pipeline** - Visual pipeline management
+- 💳 **Payments** - Stripe integration
+- 📁 **File Management** - Upload & track deliverables
+- 🔔 **Real-time** - Socket.IO for instant updates
 
 ## Tech Stack
 
 - **Framework**: Express.js + TypeScript
 - **Database**: MongoDB + Mongoose
-- **Authentication**: JWT + Whop OAuth + Google OAuth
+- **Authentication**: JWT + Whop OAuth
+- **Whop Integration**: @whop/sdk - Support Channels, Memberships
+- **Messaging**: Whop Support Channels API (Discord fallback)
+- **Real-time**: Socket.IO
 - **Payments**: Stripe Integration
 - **File Upload**: Multer
 - **CSV Processing**: Papaparse
-- **Scheduling**: Node-Cron
 
 ## Getting Started
 

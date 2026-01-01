@@ -18,6 +18,7 @@ export const CONSTANTS = {
   WHOP_API_KEY: process.env.WHOP_API_KEY || '',
   WHOP_APP_ID: process.env.WHOP_APP_ID || '',
   WHOP_COMPANY_ID: process.env.WHOP_COMPANY_ID || '',
+  WHOP_WEBHOOK_SECRET: process.env.WHOP_WEBHOOK_SECRET || '',
 
   // Discord Integration
   DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',

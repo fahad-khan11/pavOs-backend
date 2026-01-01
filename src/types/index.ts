@@ -402,6 +402,8 @@ export interface ILead extends Document {
   // Whop integration fields
   whopMembershipId?: string;
   whopCustomerId?: string;
+  whopSupportChannelId?: string;  // ✅ NEW: Whop DM channel ID
+  lastWhopMessageAt?: Date;  // ✅ NEW: Last message timestamp
   wonAt?: Date;
   customFields?: Record<string, any>;
   createdAt: Date;

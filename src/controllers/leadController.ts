@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { AuthRequest } from '../types/index.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import { Lead, DiscordMessage, Contact, User } from '../models/index.js';
+import { whopMessageService } from '../services/whopMessageService.js';
+import { discordService } from '../services/discordService.js';
 
 /**
  * ✅ REFACTORED: Whop-only authentication
@@ -262,6 +264,180 @@ export const getLeadStats = async (req: AuthRequest, res: Response): Promise<voi
   }
 };
 
+/**
+ * Send Whop message to lead
+ * POST /api/v1/leads/:id/whop-message
+ */
+export const sendWhopMessage = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const whopCompanyId = req.whopCompanyId!;
+    const whopUserId = req.whopUserId!;
+    const { id: leadId } = req.params;
+    const { message } = req.body;
+
+    // Validation
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      errorResponse(res, 'Message content is required', 400);
+      return;
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(leadId)) {
+      errorResponse(res, 'Invalid lead ID format', 400);
+      return;
+    }
+
+    // Send message via Whop
+    const result = await whopMessageService.sendDirectMessage(
+      leadId,
+      message.trim(),
+      whopUserId,
+      whopCompanyId
+    );
+
+    successResponse(res, {
+      message: 'Whop message sent successfully',
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('❌ sendWhopMessage error:', error);
+    errorResponse(res, error.message || 'Failed to send Whop message', 500);
+  }
+};
+
+/**
+ * Get Whop conversation history for lead
+ * GET /api/v1/leads/:id/whop-messages
+ */
+export const getWhopMessages = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const whopCompanyId = req.whopCompanyId!;
+    const { id: leadId } = req.params;
+    const { limit = 50 } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(leadId)) {
+      errorResponse(res, 'Invalid lead ID format', 400);
+      return;
+    }
+
+    // Get conversation history
+    const messages = await whopMessageService.getConversationHistory(
+      leadId,
+      whopCompanyId,
+      Number(limit)
+    );
+
+    successResponse(res, {
+      messages,
+      total: messages.length,
+    });
+  } catch (error: any) {
+    console.error('❌ getWhopMessages error:', error);
+    errorResponse(res, error.message || 'Failed to fetch Whop messages', 500);
+  }
+};
+
+/**
+ * ✅ SMART ROUTING: Auto-detect Whop or Discord and send accordingly
+ * Send message to lead (auto-routes to Whop or Discord based on lead source)
+ * POST /api/v1/leads/:id/send-message
+ * 
+ * Priority:
+ * 1. Whop (if whopCustomerId exists) → Whop DM
+ * 2. Discord (if discordUserId exists) → Discord message
+ * 3. Error if neither exists
+ */
+export const sendMessage = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id: leadId } = req.params;
+    const { message } = req.body;
+    const userId = req.user?.id;
+    const whopCompanyId = req.whopCompanyId!;
+
+    console.log(`📤 sendMessage: leadId=${leadId}, userId=${userId}, companyId=${whopCompanyId}`);
+
+    // Validation
+    if (!message?.trim()) {
+      return errorResponse(res, 'Message content is required', 400);
+    }
+
+    // ✅ SECURITY: Get lead with strict tenant isolation
+    const lead = await Lead.findOne({ 
+      _id: leadId, 
+      whopCompanyId 
+    });
+
+    if (!lead) {
+      return errorResponse(res, 'Lead not found', 404);
+    }
+
+    console.log(`🔍 Lead found: source=${lead.source}, whopCustomerId=${(lead as any).whopCustomerId}, discordUserId=${lead.discordUserId}`);
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // SMART ROUTING LOGIC
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    // Priority 1: Whop (if lead has whopCustomerId)
+    if ((lead as any).whopCustomerId) {
+      console.log('🟣 Routing to Whop DM...');
+      
+      try {
+        const result = await whopMessageService.sendDirectMessage(
+          leadId,
+          message,
+          userId!,
+          whopCompanyId
+        );
+        
+        console.log(`✅ Message sent via Whop: channelId=${result.channelId}, messageId=${result.messageId}`);
+        
+        return successResponse(res, {
+          success: true,
+          source: 'whop',
+          channelId: result.channelId,
+          messageId: result.messageId,
+          leadId: leadId,
+        }, 'Message sent via Whop');
+      } catch (whopError: any) {
+        console.error('❌ Whop message failed:', whopError);
+        return errorResponse(res, `Failed to send Whop message: ${whopError.message}`, 500);
+      }
+    }
+    
+    // Priority 2: Discord (if lead has discordUserId)
+    if (lead.discordUserId) {
+      console.log('💬 Routing to Discord...');
+      
+      try {
+        const result = await discordService.sendMessage(leadId, message);
+        
+        console.log(`✅ Message sent via Discord: messageId=${result.messageId}`);
+        
+        return successResponse(res, {
+          success: true,
+          source: 'discord',
+          messageId: result.messageId,
+          leadId: leadId,
+        }, 'Message sent via Discord');
+      } catch (discordError: any) {
+        console.error('❌ Discord message failed:', discordError);
+        return errorResponse(res, `Failed to send Discord message: ${discordError.message}`, 500);
+      }
+    }
+    
+    // No messaging source available
+    console.warn('⚠️ Lead has no messaging source (whopCustomerId or discordUserId)');
+    return errorResponse(
+      res, 
+      'Lead has no messaging source. Please ensure the lead has a Whop or Discord connection.', 
+      400
+    );
+
+  } catch (error: any) {
+    console.error('❌ sendMessage error:', error);
+    return errorResponse(res, error.message || 'Failed to send message', 500);
+  }
+};
+
 export default {
   getLeads,
   getLeadById,
@@ -269,4 +445,7 @@ export default {
   updateLead,
   deleteLead,
   getLeadStats,
+  sendWhopMessage,
+  getWhopMessages,
+  sendMessage, // ✅ NEW: Smart routing endpoint
 };
