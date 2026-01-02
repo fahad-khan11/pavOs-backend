@@ -106,6 +106,15 @@ const leadSchema = new Schema<ILead>(
       type: String,
       index: true,
     },
+    whopSupportChannelId: {
+      type: String,
+      index: true,
+      sparse: true,  // Only indexed if value exists
+    },
+    lastWhopMessageAt: {
+      type: Date,
+      index: true,
+    },
     wonAt: {
       type: Date,
     },
