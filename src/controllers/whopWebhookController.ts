@@ -113,6 +113,7 @@ async function handleMembershipCreated(membership: any, company_id: string) {
     let creator = await User.findOne({ whopCompanyId: company_id });
     
     // ✅ Fallback: If test webhook or company not found, use any user for testing
+    let actualCompanyId = company_id;
     if (!creator) {
       console.warn(`⚠️  No user found for company ${company_id}, using fallback for testing...`);
       creator = await User.findOne({}).sort({ createdAt: -1 }); // Get most recent user
@@ -121,14 +122,16 @@ async function handleMembershipCreated(membership: any, company_id: string) {
         console.error(`❌ No users in system at all!`);
         return;
       }
-      console.log(`✅ Using fallback user: ${creator.email}`);
+      // Use the fallback user's REAL whopCompanyId instead of fake test ID
+      actualCompanyId = creator.whopCompanyId;
+      console.log(`✅ Using fallback user: ${creator.email} (whopCompanyId: ${actualCompanyId})`);
     }
 
     const userId = creator._id.toString();
 
     // Check if lead already exists
     let existingLead = await Lead.findOne({
-      whopCompanyId: company_id,
+      whopCompanyId: actualCompanyId,
       $or: [
         { whopMembershipId: membership_id },
         { whopCustomerId: user_id },
@@ -151,7 +154,7 @@ async function handleMembershipCreated(membership: any, company_id: string) {
     // Create new lead
     const newLead = await Lead.create({
       userId,
-      whopCompanyId: company_id,
+      whopCompanyId: actualCompanyId, // Use real company ID, not fake test ID
       name: user_name,
       email: user_email || undefined,
       source: 'whop',
@@ -167,7 +170,7 @@ async function handleMembershipCreated(membership: any, company_id: string) {
 
     // Emit Socket.IO event for real-time update
     const io = getIO();
-    io.to(company_id).emit('lead:created', { lead: newLead });
+    io.to(actualCompanyId).emit('lead:created', { lead: newLead });
 
   } catch (error) {
     console.error('❌ Error creating lead from membership:', error);
