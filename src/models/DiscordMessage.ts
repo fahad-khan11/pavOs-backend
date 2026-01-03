@@ -134,7 +134,7 @@ discordMessageSchema.index({ source: 1, createdAt: -1 });
 discordMessageSchema.index({ isRead: 1, userId: 1 });
 
 // Virtual for id field
-discordMessageSchema.virtual('id').get(function () {
+discordMessageSchema.virtual('id').get(function (this: any) {
   return this._id.toString();
 });
 

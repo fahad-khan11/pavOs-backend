@@ -349,10 +349,15 @@ export interface IDiscordMessage extends Document {
   whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant isolation
   contactId?: string;
   leadId?: string;
+  // Discord-specific fields (optional for Whop messages)
   discordGuildId?: string;
-  discordChannelId: string;
-  discordMessageId: string;
-  authorDiscordId: string;
+  discordChannelId?: string;
+  discordMessageId?: string;
+  authorDiscordId?: string;
+  // Whop-specific fields (optional for Discord messages)
+  whopChannelId?: string;
+  whopMessageId?: string;
+  source: 'discord' | 'whop';  // Message source
   authorUsername?: string;
   content: string;
   direction: MessageDirection;
