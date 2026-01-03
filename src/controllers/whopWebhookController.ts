@@ -429,6 +429,7 @@ export const handleMessageWebhook = async (req: Request, res: Response) => {
 async function handleMessageCreated(payload: any) {
   try {
     console.log('📨 Processing incoming message...');
+    console.log('📦 Payload:', JSON.stringify(payload, null, 2));
 
     // Process message via whopMessageService
     const result = await whopMessageService.handleIncomingMessage(payload);
@@ -439,6 +440,7 @@ async function handleMessageCreated(payload: any) {
     }
 
     console.log(`✅ Incoming message processed for lead: ${result.leadId}`);
+    console.log(`💾 Message saved with DB ID: ${result.message.dbMessageId}`);
 
     // ✅ Emit Socket.IO event for real-time update
     try {

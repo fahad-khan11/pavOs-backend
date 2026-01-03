@@ -488,7 +488,7 @@ export interface RecentActivity {
 }
 
 export interface UpcomingDeliverable {
-  id: string;
+  id: string;                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
   dealId: string;
   dealName: string;
   title: string;

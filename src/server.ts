@@ -30,6 +30,9 @@ import routes from './routes/index.js';
 // Import Discord bot service
 import { discordBotService } from './services/discordBotService.js';
 
+// ✅ Import Whop message poller
+import { whopMessagePoller } from './services/whopMessagePoller.js';
+
 // ✅ Import Socket.IO initializer
 import { initSocket } from './socket/index.js';
 
@@ -173,6 +176,10 @@ const startServer = async (): Promise<void> => {
 ║                                                        ║
 ╚════════════════════════════════════════════════════════╝
       `);
+
+      // ✅ Start Whop message poller (since webhooks aren't available)
+      whopMessagePoller.start();
+      logger.info('🔄 Whop message poller started (checking every 30 seconds)');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

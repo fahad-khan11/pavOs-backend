@@ -311,6 +311,141 @@ class WhopMessageService {
     
     return available;
   }
+
+  /**
+   * Poll for new messages from a Whop support channel
+   * Used when webhooks are not available
+   * @param leadId - Lead ID
+   * @param whopCompanyId - Company ID
+   */
+  async pollForNewMessages(leadId: string, whopCompanyId: string): Promise<void> {
+    try {
+      const lead = await Lead.findOne({
+        _id: leadId,
+        whopCompanyId,
+      });
+
+      if (!lead || !(lead as any).whopSupportChannelId) {
+        return; // No channel yet
+      }
+
+      const channelId = (lead as any).whopSupportChannelId;
+
+      // Fetch latest messages from Whop
+      const messagesResponse = await whopService.whop.messages.list({
+        channel_id: channelId,
+        first: 10, // Check last 10 messages
+      });
+
+      const whopMessages = messagesResponse.data || [];
+      console.log(`📥 Polling found ${whopMessages.length} messages in channel ${channelId}`);
+
+      for (const whopMessage of whopMessages) {
+        // Type assertion for Whop message properties
+        const message = whopMessage as any;
+        
+        // ✅ CRITICAL FIX: Check if message already exists in database FIRST
+        // This prevents duplicate processing even if sender ID logic fails
+        const existingMessage = await DiscordMessage.findOne({
+          whopMessageId: message.id,
+        });
+
+        if (existingMessage) {
+          console.log(`⏭️ Message ${message.id} already in database, skipping`);
+          continue; // Already saved
+        }
+
+        // Get sender ID (could be in different properties)
+        const senderId = message.user_id || message.user?.id || message.author_id;
+        
+        if (!senderId) {
+          console.log(`⏭️ Message ${message.id} has no sender ID, skipping`);
+          continue; // Skip if no sender ID
+        }
+
+        // ✅ FIX: Check if message is from customer (not from us)
+        // The customer's Whop user ID should match the lead's whopCustomerId
+        const customerWhopId = (lead as any).whopCustomerId;
+        const isFromCustomer = senderId === customerWhopId;
+
+        console.log(`🔍 Message ${message.id}: sender=${senderId}, customer=${customerWhopId}, isFromCustomer=${isFromCustomer}`);
+
+        if (!isFromCustomer) {
+          console.log(`⏭️ Skipping outgoing message (not from customer)`);
+          continue; // Skip our own messages (sent by company)
+        }
+
+        // Save new incoming message
+        const savedMessage = await DiscordMessage.create({
+          userId: lead.userId,
+          whopCompanyId,
+          leadId: lead._id.toString(),
+          whopChannelId: channelId,
+          whopMessageId: message.id,
+          authorUsername: lead.name,
+          content: message.content || '',
+          direction: 'incoming',
+          source: 'whop',
+          isRead: false,
+          metadata: {
+            whopCustomerId: senderId,
+            whopCustomerName: lead.name,
+          },
+        });
+
+        console.log(`💾 New message polled and saved: ${savedMessage._id} from lead: ${lead.name}`);
+
+        // Emit Socket.IO event for real-time update
+        try {
+          const { getIO } = await import('../socket/index.js');
+          const io = getIO();
+
+          io.to(whopCompanyId).emit('whop:message', {
+            leadId: lead._id.toString(),
+            message: {
+              id: message.id,
+              dbMessageId: savedMessage._id.toString(),
+              content: message.content,
+              senderId: senderId,
+              channelId,
+              direction: 'incoming',
+              timestamp: new Date(),
+            },
+            lead: {
+              id: lead._id.toString(),
+              name: lead.name,
+              email: lead.email,
+            },
+            source: 'whop',
+            direction: 'incoming',
+            createdAt: new Date().toISOString(),
+          });
+
+          io.to(`lead:${lead._id.toString()}`).emit('whop:message', {
+            leadId: lead._id.toString(),
+            message: {
+              id: message.id,
+              dbMessageId: savedMessage._id.toString(),
+              content: message.content,
+            },
+            source: 'whop',
+            direction: 'incoming',
+            createdAt: new Date().toISOString(),
+          });
+
+          console.log(`📡 Socket.IO event emitted for polled message`);
+        } catch (socketError) {
+          console.error('⚠️ Failed to emit Socket.IO event:', socketError);
+        }
+
+        // Update lead's last message timestamp
+        (lead as any).lastWhopMessageAt = new Date();
+        await lead.save();
+      }
+    } catch (error: any) {
+      console.error(`❌ Error polling messages for lead ${leadId}:`, error.message);
+    }
+  }
 }
 
 export const whopMessageService = new WhopMessageService();

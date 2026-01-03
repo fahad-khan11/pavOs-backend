@@ -165,14 +165,26 @@ leadSchema.index({ discordUserId: 1 }, { sparse: true });
 leadSchema.index({ whopCompanyId: 1, status: 1 });
 leadSchema.index({ whopCompanyId: 1, source: 1 });
 leadSchema.index({ whopCompanyId: 1, createdAt: -1 });
-// ✅ MULTI-TENANT FIX: Ensure same Discord user can exist in different companies
-// But prevent duplicate Discord users within the same company
+
+// ✅ UNIQUE CONSTRAINT: Prevent duplicate Whop memberships
 leadSchema.index(
-  { whopCompanyId: 1, discordUserId: 1 }, 
-  { 
-    unique: true, 
-    sparse: true,  // Allows null discordUserId (for non-Discord leads)
-    name: 'unique_discord_user_per_company'
+  { whopCompanyId: 1, whopMembershipId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { whopMembershipId: { $type: 'string' } }, // Only for docs with whopMembershipId
+    name: 'unique_whop_membership_per_company',
+  }
+);
+
+// ✅ UNIQUE CONSTRAINT: Prevent duplicate Discord users per company
+// Uses partialFilterExpression to ONLY apply to Discord leads (where discordUserId exists)
+// This allows unlimited manual and Whop leads with null discordUserId
+leadSchema.index(
+  { whopCompanyId: 1, discordUserId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { discordUserId: { $type: 'string' } }, // Only for docs with discordUserId
+    name: 'unique_discord_user_per_company',
   }
 );
 
