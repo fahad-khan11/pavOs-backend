@@ -1,5 +1,5 @@
 import { whopService } from './whopService.js';
-import { Lead, User } from '../models/index.js';
+import { Lead, User, DiscordMessage } from '../models/index.js';
 import mongoose from 'mongoose';
 
 /**
@@ -99,7 +99,27 @@ class WhopMessageService {
 
       console.log(`✅ Message sent via Whop: ${whopMessage.id}`);
 
-      // Step 3: Update lead's last message timestamp
+      // Step 3: Save message to database
+      const savedMessage = await DiscordMessage.create({
+        userId: senderUserId,
+        whopCompanyId,
+        leadId: lead._id.toString(),
+        whopChannelId: channelId,
+        whopMessageId: whopMessage.id,
+        authorUsername: 'You', // Sender is the business user
+        content: message,
+        direction: 'outgoing',
+        source: 'whop',
+        isRead: true, // Outgoing messages are marked as read
+        metadata: {
+          whopCustomerId: lead.whopCustomerId,
+          whopCustomerName: lead.name,
+        },
+      });
+
+      console.log(`💾 Message saved to database: ${savedMessage._id}`);
+
+      // Step 4: Update lead's last message timestamp
       (lead as any).lastWhopMessageAt = new Date();
       await lead.save();
 
@@ -108,6 +128,7 @@ class WhopMessageService {
         success: true,
         channelId,
         messageId: whopMessage.id,
+        dbMessageId: savedMessage._id.toString(),
         content: message,
         timestamp: new Date(),
         lead: {
@@ -210,6 +231,26 @@ class WhopMessageService {
 
       console.log(`📨 Incoming message from customer: ${lead.name}`);
 
+      // Save incoming message to database
+      const savedMessage = await DiscordMessage.create({
+        userId: lead.userId,
+        whopCompanyId: lead.whopCompanyId,
+        leadId: lead._id.toString(),
+        whopChannelId: channelId,
+        whopMessageId: messageId,
+        authorUsername: lead.name,
+        content: messageContent,
+        direction: 'incoming',
+        source: 'whop',
+        isRead: false, // Incoming messages start as unread
+        metadata: {
+          whopCustomerId: senderId,
+          whopCustomerName: lead.name,
+        },
+      });
+
+      console.log(`💾 Incoming message saved to database: ${savedMessage._id}`);
+
       // Update lead's last message timestamp
       (lead as any).lastWhopMessageAt = new Date();
       await lead.save();
@@ -220,10 +261,11 @@ class WhopMessageService {
         whopCompanyId: lead.whopCompanyId,
         message: {
           id: messageId,
+          dbMessageId: savedMessage._id.toString(),
           content: messageContent,
           senderId,
           channelId,
-          direction: 'inbound',
+          direction: 'incoming',
           timestamp: new Date(),
         },
         lead: {

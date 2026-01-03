@@ -349,24 +349,26 @@ export const getWhopMessages = async (req: AuthRequest, res: Response): Promise<
 export const sendMessage = async (req: AuthRequest, res: Response) => {
   try {
     const { id: leadId } = req.params;
-    const { message } = req.body;
-    const userId = req.user?.id;
+    const { content } = req.body;  // ✅ FIXED: Accept 'content' to match frontend
+    const userId = req._internalUserId;  // ✅ Use internal MongoDB user ID
     const whopCompanyId = req.whopCompanyId!;
 
-    console.log(`📤 sendMessage: leadId=${leadId}, userId=${userId}, companyId=${whopCompanyId}`);
+    console.log(`📤 sendMessage: leadId=${leadId}, userId=${userId}, companyId=${whopCompanyId}, content=${content?.substring(0, 50)}...`);
 
     // Validation
-    if (!message?.trim()) {
+    if (!content?.trim()) {
       return errorResponse(res, 'Message content is required', 400);
     }
 
     // ✅ SECURITY: Get lead with strict tenant isolation
+    console.log(`🔍 Searching for lead: _id=${leadId}, whopCompanyId=${whopCompanyId}`);
     const lead = await Lead.findOne({ 
       _id: leadId, 
       whopCompanyId 
     });
 
     if (!lead) {
+      console.error(`❌ Lead not found: _id=${leadId}, whopCompanyId=${whopCompanyId}`);
       return errorResponse(res, 'Lead not found', 404);
     }
 
@@ -383,7 +385,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
       try {
         const result = await whopMessageService.sendDirectMessage(
           leadId,
-          message,
+          content,  // ✅ FIXED: Use 'content' instead of 'message'
           userId!,
           whopCompanyId
         );
@@ -408,7 +410,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
       console.log('💬 Routing to Discord...');
       
       try {
-        const result = await discordService.sendMessage(leadId, message);
+        const result = await discordService.sendMessage(leadId, content);  // ✅ FIXED: Use 'content' instead of 'message'
         
         console.log(`✅ Message sent via Discord: messageId=${result.messageId}`);
         

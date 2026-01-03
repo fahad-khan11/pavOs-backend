@@ -30,18 +30,34 @@ const discordMessageSchema = new Schema<IDiscordMessage>(
     },
     discordChannelId: {
       type: String,
-      required: [true, 'Discord channel ID is required'],
       index: true,
     },
     discordMessageId: {
       type: String,
-      required: [true, 'Discord message ID is required'],
       unique: true,
+      sparse: true, // Allow null for Whop messages
       index: true,
     },
     authorDiscordId: {
       type: String,
-      required: [true, 'Author Discord ID is required'],
+      index: true,
+    },
+    // Whop-specific fields
+    whopChannelId: {
+      type: String,
+      index: true,
+    },
+    whopMessageId: {
+      type: String,
+      unique: true,
+      sparse: true, // Allow null for Discord messages
+      index: true,
+    },
+    source: {
+      type: String,
+      enum: ['discord', 'whop'],
+      default: 'discord',
+      required: true,
       index: true,
     },
     authorUsername: {
@@ -113,6 +129,8 @@ discordMessageSchema.index({ contactId: 1, createdAt: -1 });
 discordMessageSchema.index({ leadId: 1, createdAt: -1 });
 discordMessageSchema.index({ discordChannelId: 1, createdAt: -1 });
 discordMessageSchema.index({ discordGuildId: 1, createdAt: -1 });
+discordMessageSchema.index({ whopChannelId: 1, createdAt: -1 });
+discordMessageSchema.index({ source: 1, createdAt: -1 });
 discordMessageSchema.index({ isRead: 1, userId: 1 });
 
 // Virtual for id field
