@@ -17,9 +17,19 @@ import { getIO } from '../socket/index.js';
  */
 export const handleMembershipWebhook = async (req: Request, res: Response) => {
   try {
+    console.log('🎯 ========================================');
+    console.log('🎯 MEMBERSHIP WEBHOOK TRIGGERED!');
+    console.log('🎯 Timestamp:', new Date().toISOString());
+    console.log('🎯 Request Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('🎯 Request Body (raw):', JSON.stringify(req.body, null, 2));
+    console.log('🎯 ========================================');
+
     const payload = Array.isArray(req.body) ? req.body[0] : req.body;
     
     console.log('🔔 Whop Membership Webhook received:', JSON.stringify(payload, null, 2));
+    console.log('🔍 Request headers:', JSON.stringify(req.headers, null, 2));
+    console.log('🔍 Request method:', req.method);
+    console.log('🔍 Request URL:', req.url);
 
     // Extract event type
     const event = payload?.event || payload?.type || null;
