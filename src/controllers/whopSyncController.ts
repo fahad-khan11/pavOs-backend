@@ -37,7 +37,6 @@ export const syncWhopMembers = async (req: Request, res: Response) => {
     console.log('📡 Fetching memberships from Whop API...');
     const membershipsResponse = await whopService.whop.memberships.list({
       company_id: whopCompanyId,
-      valid: true, // Only active memberships
     });
 
     const memberships = membershipsResponse.data || [];
@@ -140,58 +139,6 @@ export const syncWhopMembers = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to sync members',
-      error: error.message,
-    });
-  }
-};
-
-/**
- * Test webhook endpoint - manually trigger membership webhook
- * POST /api/v1/whop/test-webhook
- */
-export const testMembershipWebhook = async (req: Request, res: Response) => {
-  try {
-    const { userId, companyId } = req.body;
-
-    if (!userId || !companyId) {
-      return res.status(400).json({
-        success: false,
-        message: 'userId and companyId are required',
-      });
-    }
-
-    // Simulate webhook payload
-    const testPayload = {
-      event: 'membership_activated',
-      data: {
-        id: `mem_test_${Date.now()}`,
-        user_id: userId,
-        company_id: companyId,
-        status: 'active',
-      },
-    };
-
-    console.log('🧪 Testing membership webhook with payload:', testPayload);
-
-    // Import the webhook handler
-    const { handleMembershipWebhook } = await import('./whopWebhookController.js');
-
-    // Create mock request
-    const mockReq = {
-      body: testPayload,
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-      url: '/api/v1/webhooks/whop/membership',
-    } as any;
-
-    // Call webhook handler
-    await handleMembershipWebhook(mockReq, res);
-
-  } catch (error: any) {
-    console.error('❌ Test webhook error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Test webhook failed',
       error: error.message,
     });
   }
