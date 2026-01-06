@@ -343,7 +343,7 @@ export interface IDiscordLeadChannel extends Document {
 
 export type MessageDirection = 'incoming' | 'outgoing';
 
-export interface IDiscordMessage extends Document {
+export interface IDiscordMessage extends Document {                                                                                                                                                                                                                                                                                                                                                                                                                                 
   id: string;
   userId: string;  // ⚠️ DEPRECATED: Use whopUserId via user lookup
   whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant isolation

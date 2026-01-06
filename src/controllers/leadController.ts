@@ -410,14 +410,24 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
       console.log('💬 Routing to Discord...');
       
       try {
-        const result = await discordService.sendMessage(leadId, content);  // ✅ FIXED: Use 'content' instead of 'message'
+        // Use Discord Bot Service to send DM
+        const { discordBotService } = await import('../services/discordBotService.js');
+        const sentMessage = await discordBotService.sendDM(
+          lead.discordUserId,
+          content,
+          userId!
+        );
         
-        console.log(`✅ Message sent via Discord: messageId=${result.messageId}`);
+        if (!sentMessage) {
+          return errorResponse(res, 'Failed to send Discord DM. User may have DMs disabled.', 500);
+        }
+        
+        console.log(`✅ Message sent via Discord: messageId=${sentMessage.id}`);
         
         return successResponse(res, {
           success: true,
           source: 'discord',
-          messageId: result.messageId,
+          messageId: sentMessage.id,
           leadId: leadId,
         }, 'Message sent via Discord');
       } catch (discordError: any) {
