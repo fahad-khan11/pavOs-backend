@@ -246,32 +246,18 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
-    // ✅ REFACTORED: Generate tokens with whopUserId and whopCompanyId as primary identifiers
-    const accessToken = generateAccessToken({
-      whopUserId: user.whopUserId,
-      whopCompanyId: user.whopCompanyId,
-      email: user.email,
-      whopRole: user.whopRole,
-      _internalUserId: user._id.toString(),  // For backward compatibility only
-    });
+    // ✅ WHOP-FIRST: Don't generate tokens - Whop handles authentication
+    // Only create/update the user record
+    console.log(`✅ Whop authentication successful for ${user.email} (role: ${user.whopRole || 'member'})`);
 
-    const refreshToken = generateRefreshToken({
-      whopUserId: user.whopUserId,
-      whopCompanyId: user.whopCompanyId,
-      email: user.email,
-      whopRole: user.whopRole,
-      _internalUserId: user._id.toString(),  // For backward compatibility only
-    });
-
-    // Save refresh token
-    user.refreshTokens.push(refreshToken);
+    // Update last login
     user.lastLogin = new Date();
     await user.save();
 
     // Track login event
     await TelemetryEvent.create({
       userId: user._id.toString(),
-      whopCompanyId,  // ✅ Required field
+      whopCompanyId,
       eventType: 'user_login',
       eventData: { email: user.email, provider: 'whop', whopCompanyId, whopRole: user.whopRole },
     });
@@ -302,18 +288,19 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       // Don't fail auth if WhopConnection fails
     }
 
+    // ✅ WHOP-FIRST: Return only user data, no tokens
     successResponse(res, {
-      accessToken,
-      refreshToken,
       user: {
         id: user._id,
+        whopUserId: user.whopUserId,
+        whopCompanyId: user.whopCompanyId,
         name: user.name,
         email: user.email,
         role: user.role,
         whopRole: user.whopRole,
         subscriptionPlan: user.subscriptionPlan,
       },
-    });
+    }, 'Whop authentication successful');
   } catch (error: any) {
     console.error('Whop auth error:', error);
     errorResponse(res, 'Failed to authenticate with Whop', 500);

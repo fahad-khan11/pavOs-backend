@@ -42,8 +42,29 @@ export const initSocket = (server: http.Server) => {
   });
 
   io.on("connection", (socket) => {
+    console.log(`🔌 Socket connected: ${socket.id}`);
+    
+    // ✅ WHOP-FIRST: Join rooms based on Whop identifiers
+    const { whopUserId, whopCompanyId } = socket.handshake.auth;
+    
+    if (whopUserId) {
+      socket.join(whopUserId);
+      console.log(`✅ Socket ${socket.id} joined user room: ${whopUserId}`);
+    }
+    
+    if (whopCompanyId) {
+      socket.join(whopCompanyId);
+      console.log(`✅ Socket ${socket.id} joined company room: ${whopCompanyId}`);
+    }
+
     socket.on("join-user", (userId) => {
       socket.join(userId);
+      console.log(`Socket ${socket.id} manually joined user room: ${userId}`);
+    });
+
+    socket.on("join-company", (companyId) => {
+      socket.join(companyId);
+      console.log(`Socket ${socket.id} manually joined company room: ${companyId}`);
     });
 
     socket.on("lead:join", (data) => {
