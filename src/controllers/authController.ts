@@ -134,6 +134,9 @@ export const googleCallback = async (req: AuthRequest, res: Response): Promise<v
 /**
  * Authenticate user from Whop
  * POST /api/v1/auth/whop
+ * 
+ * ✅ WHOP-COMPLIANT: This endpoint ONLY creates/updates user records
+ * NO custom JWT tokens, NO refresh tokens - Whop handles all authentication
  */
 export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -144,13 +147,12 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    // If name is not provided, fetch it from Whop API
+    // Fetch user data and role from Whop API
     let userName = name;
     let userEmail = email;
     let whopRole: string | undefined;
     let whopAuthorizedUserId: string | undefined;
 
-    // Fetch user data and role from Whop API
     try {
       console.log(`Fetching user data from Whop API for userId: ${whopUserId}, companyId: ${whopCompanyId}`);
       const { whopService } = await import('../services/whopService.js');
@@ -158,8 +160,7 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       // Get basic user info
       const whopUser = await whopService.getUser(whopUserId);
       
-      // Whop UserRetrieveResponse may have different property names
-      // Try multiple possible fields for username
+      // Extract username from Whop response
       if (!userName) {
         userName = (whopUser as any).username || 
                    (whopUser as any).name || 
@@ -169,7 +170,7 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         console.log(`Fetched username from Whop: ${userName}`);
       }
       
-      // Try multiple possible fields for email
+      // Extract email from Whop response
       if (!userEmail) {
         userEmail = (whopUser as any).email || 
                     (whopUser as any).email_address || 
@@ -179,12 +180,12 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         }
       }
 
-      // 🔐 ROLE-BASED ACCESS CONTROL: Fetch authorized user role
+      // Fetch user's role in this company
       const authorizedUser = await whopService.getAuthorizedUser(whopCompanyId, whopUserId);
       if (authorizedUser) {
         whopRole = authorizedUser.role;
         whopAuthorizedUserId = authorizedUser.id;
-        console.log(`🔐 User role in company: ${whopRole} (authorized user ID: ${whopAuthorizedUserId})`);
+        console.log(`🔐 User role in company: ${whopRole}`);
       } else {
         console.log(`⚠️  User ${whopUserId} is not a team member - treating as regular user`);
       }
@@ -193,12 +194,11 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       // Continue with provided data or defaults
     }
 
-    // ✅ REFACTORED: Find user by BOTH whopUserId AND whopCompanyId
-    // This allows the same person to have separate accounts for different companies
+    // Find or create user by Whop identifiers
     let user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
 
     if (!user) {
-      // Auto-create user from Whop data for this specific company using the new helper
+      // Auto-create user from Whop data
       user = await (User as any).findOrCreateWhopUser({
         whopUserId,
         whopCompanyId,
@@ -208,33 +208,26 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         whopAuthorizedUserId,
       });
 
-      console.log(`✅ Created new user for company ${whopCompanyId}: ${user.name} (${user.email}) with role: ${whopRole || 'none'}`);
+      console.log(`✅ Created new user for company ${whopCompanyId}: ${user.name} with role: ${whopRole || 'none'}`);
     } else {
-      // Update user data if provided and changed
+      // Update user data if changed
       let needsUpdate = false;
 
-      // Update name if provided and different
       if (userName && user.name !== userName) {
         user.name = userName;
         needsUpdate = true;
-        console.log(`Updating user name to: ${userName}`);
       }
 
-      // Update email if provided and different (and not a placeholder)
       if (userEmail && !userEmail.includes('@whop.user') && !userEmail.includes('@paveos.app') && user.email !== userEmail) {
         user.email = userEmail;
         needsUpdate = true;
-        console.log(`Updating user email to: ${userEmail}`);
       }
 
-      // Update Whop role if it changed
       if (whopRole && user.whopRole !== whopRole) {
         user.whopRole = whopRole as any;
         needsUpdate = true;
-        console.log(`🔐 Updating user Whop role to: ${whopRole}`);
       }
 
-      // Update authorized user ID
       if (whopAuthorizedUserId && user.whopAuthorizedUserId !== whopAuthorizedUserId) {
         user.whopAuthorizedUserId = whopAuthorizedUserId;
         needsUpdate = true;
@@ -242,41 +235,23 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
 
       if (needsUpdate) {
         await user.save();
-        console.log(`Updated user from Whop: ${user.name} (${user.email}) with role: ${user.whopRole || 'none'}`);
+        console.log(`Updated user from Whop: ${user.name} with role: ${user.whopRole || 'none'}`);
       }
     }
 
-    // ✅ REFACTORED: Generate tokens with whopUserId and whopCompanyId as primary identifiers
-    const accessToken = generateAccessToken({
-      whopUserId: user.whopUserId,
-      whopCompanyId: user.whopCompanyId,
-      email: user.email,
-      whopRole: user.whopRole,
-      _internalUserId: user._id.toString(),  // For backward compatibility only
-    });
-
-    const refreshToken = generateRefreshToken({
-      whopUserId: user.whopUserId,
-      whopCompanyId: user.whopCompanyId,
-      email: user.email,
-      whopRole: user.whopRole,
-      _internalUserId: user._id.toString(),  // For backward compatibility only
-    });
-
-    // Save refresh token
-    user.refreshTokens.push(refreshToken);
+    // Update last login
     user.lastLogin = new Date();
     await user.save();
 
     // Track login event
     await TelemetryEvent.create({
       userId: user._id.toString(),
-      whopCompanyId,  // ✅ Required field
+      whopCompanyId,
       eventType: 'user_login',
       eventData: { email: user.email, provider: 'whop', whopCompanyId, whopRole: user.whopRole },
     });
 
-    // Auto-create or update WhopConnection for this user
+    // Auto-create or update WhopConnection
     try {
       let whopConnection = await WhopConnection.findOne({ userId: user._id.toString() });
 
@@ -290,7 +265,6 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
         });
         console.log(`Auto-created WhopConnection for user: ${user.email}`);
       } else {
-        // Update if needed
         whopConnection.whopUserId = whopUserId;
         whopConnection.whopCompanyId = whopCompanyId;
         whopConnection.isActive = true;
@@ -299,12 +273,11 @@ export const whopAuth = async (req: AuthRequest, res: Response): Promise<void> =
       }
     } catch (error) {
       console.error('Failed to create/update WhopConnection:', error);
-      // Don't fail auth if WhopConnection fails
     }
 
+    // ✅ WHOP-COMPLIANT: Return ONLY user data, NO custom tokens
+    // Authentication is handled by Whop's token system
     successResponse(res, {
-      accessToken,
-      refreshToken,
       user: {
         id: user._id,
         name: user.name,

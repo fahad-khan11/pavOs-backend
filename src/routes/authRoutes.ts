@@ -14,11 +14,7 @@ router.use(authLimiter);
  */
 router.post('/whop', authController.whopAuth);
 
-/**
- * @route   POST /api/v1/auth/refresh
- * @desc    Refresh access token
- * @access  Public
- */
-router.post('/refresh', authController.refreshAccessToken);
+// ❌ DISABLED: Custom authentication methods are not used in Whop apps
+// The app exclusively uses Whop session context
 
 export default router;
