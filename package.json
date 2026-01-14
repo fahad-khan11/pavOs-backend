@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
-    "build": "tsc && tsc-alias",    
+    "build": "tsc && tsc-alias",
     "start": "node dist/server.js",
     "seed": "ts-node --esm scripts/seedDemo.ts",
     "seed:templates": "ts-node --esm src/scripts/seedTemplates.ts",
@@ -31,6 +31,11 @@
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
     "@discordjs/rest": "^2.6.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.8.1",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.17",
     "@whop/sdk": "^0.0.8",
@@ -63,14 +68,9 @@
     "winston": "^3.17.0"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/compression": "^1.7.5",
-    "@types/cookie-parser": "^1.4.7",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
-    "@types/jsonwebtoken": "^9.0.7",
-    "@types/morgan": "^1.9.9",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.5",
     "@types/node-cron": "^3.0.11",
