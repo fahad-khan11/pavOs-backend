@@ -4,12 +4,8 @@ export const CONSTANTS = {
   API_VERSION: process.env.API_VERSION || 'v1',
   NODE_ENV: process.env.NODE_ENV || 'development',
 
-  // JWT
-  JWT_SECRET: process.env.JWT_SECRET || 'paveos-secret-key-change-in-production',
-  JWT_REFRESH_SECRET:
-    process.env.JWT_REFRESH_SECRET || 'paveos-refresh-secret-change-in-production',
-  JWT_EXPIRE: process.env.JWT_EXPIRE || '1d',
-  JWT_REFRESH_EXPIRE: process.env.JWT_REFRESH_EXPIRE || '7d',
+  // JWT - REMOVED: Whop-only authentication (no custom tokens)
+  // Authentication is handled entirely by Whop SDK
 
   // URLs
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000', 
@@ -20,15 +16,7 @@ export const CONSTANTS = {
   WHOP_COMPANY_ID: process.env.WHOP_COMPANY_ID || '',
   WHOP_WEBHOOK_SECRET: process.env.WHOP_WEBHOOK_SECRET || '',
 
-  // Discord Integration
-  DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',
-  DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET || '',
-  DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN || '',
-  DISCORD_REDIRECT_URI: process.env.DISCORD_REDIRECT_URI || 'http://localhost:5000/api/v1/integrations/discord/callback',
-  DISCORD_OAUTH_SCOPES: process.env.DISCORD_OAUTH_SCOPES || 'identify email guilds guilds.members.read bot',
-  DISCORD_PERMISSIONS: process.env.DISCORD_PERMISSIONS || '275146468368',
-  DISCORD_BOT_INTENTS: parseInt(process.env.DISCORD_BOT_INTENTS || '3276799'),
-
+  // Google OAuth (legacy, disabled)
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5000/api/v1/auth/google/callback',
@@ -111,9 +99,6 @@ export const CONSTANTS = {
     'csv_import_completed',
     'stripe_connected',
     'whop_connected',
-    'discord_connected',
-    'discord_member_synced',
-    'discord_message_sent',
     'lead_created',
     'lead_converted',
     'deal_won',

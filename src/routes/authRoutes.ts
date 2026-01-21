@@ -19,6 +19,6 @@ router.post('/whop', authController.whopAuth);
  * @desc    Refresh access token
  * @access  Public
  */
-router.post('/refresh', authController.refreshAccessToken);
+// Token refresh endpoint removed - Whop handles token lifecycle
 
 export default router;

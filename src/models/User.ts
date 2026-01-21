@@ -74,9 +74,6 @@ const userSchema = new Schema<IUser>(
       type: Date,
       default: Date.now,
     },
-    refreshTokens: [{
-      type: String,
-    }],
   },
   {
     timestamps: true,
@@ -87,7 +84,6 @@ const userSchema = new Schema<IUser>(
         delete ret._id;
         delete ret.__v;
         delete ret.password;
-        delete ret.refreshTokens;
         return ret;
       },
     },

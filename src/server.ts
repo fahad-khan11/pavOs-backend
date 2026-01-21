@@ -21,17 +21,8 @@ import './config/passport.js'; // Initialize passport strategies
 import { errorHandler } from './middlewares/errorHandler.js';
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
-// Import webhook routes (must be BEFORE rate limiter)
-import whopWebhookRoutes from './routes/whopWebhookRoutes.js';
-
 // Import routes
 import routes from './routes/index.js';
-
-// Import Discord bot service
-import { discordBotService } from './services/discordBotService.js';
-
-// ✅ Import Whop message poller
-import { whopMessagePoller } from './services/whopMessagePoller.js';
 
 // ✅ Import Socket.IO initializer
 import { initSocket } from './socket/index.js';
@@ -105,11 +96,8 @@ if (CONSTANTS.NODE_ENV === 'development') {
   app.use(morgan('combined', { stream: morganStream }));
 }
 
-// ⚠️ IMPORTANT: Webhook routes BEFORE rate limiter (webhooks bypass rate limiting)
-app.use(`/api/${CONSTANTS.API_VERSION}/webhooks/whop`, whopWebhookRoutes);
-
 // Rate limiting
-app.use(`/api/${CONSTANTS.API_VERSION}`, apiLimiter);
+app.use(`/pavos/api/${CONSTANTS.API_VERSION}`, apiLimiter);
 
 // ========================================
 // ROUTES
@@ -124,7 +112,8 @@ app.get('/health', (_req: Request, res: Response) => {
   });
 });
 
-app.use(`/api/${CONSTANTS.API_VERSION}`, routes);
+// PaveOS API routes: /pavos/api/v1/*
+app.use(`/pavos/api/${CONSTANTS.API_VERSION}`, routes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
@@ -154,15 +143,6 @@ const startServer = async (): Promise<void> => {
     // Connect to database
     await connectDatabase();
 
-    // Start Discord bot
-    try {
-      await discordBotService.startBot();
-      logger.info('✅ Discord bot started successfully');
-    } catch (error: any) {
-      logger.warn('⚠️ Discord bot failed to start:', error.message);
-      logger.warn('Discord features will be unavailable until bot is started');
-    }
-
     // ✅ Start HTTP + Socket Server
     server.listen(PORT, () => {
       logger.info(`
@@ -176,10 +156,6 @@ const startServer = async (): Promise<void> => {
 ║                                                        ║
 ╚════════════════════════════════════════════════════════╝
       `);
-
-      // ✅ Start Whop message poller (since webhooks aren't available)
-      whopMessagePoller.start();
-      logger.info('🔄 Whop message poller started (checking every 30 seconds)');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

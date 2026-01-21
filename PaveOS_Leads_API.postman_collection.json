@@ -1,0 +1,180 @@
+{
+  "info": {
+    "name": "PaveOS Leads API",
+    "description": "Complete Lead Management API - Create, Read, Update, Delete leads",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "item": [
+    {
+      "name": "1. Create Lead",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Whop-User-Id",
+            "value": "{{whop_user_id}}"
+          },
+          {
+            "key": "X-Whop-Company-Id",
+            "value": "{{whop_company_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"name\": \"John Doe\",\n  \"productId\": \"prod_premium_123\",\n  \"referrer\": \"https://affiliate.example.com\",\n  \"metadata\": {\n    \"source\": \"postman_test\",\n    \"campaign\": \"January 2026\",\n    \"utm_source\": \"email\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{backend_url}}/pavos/api/v1/leads",
+          "host": ["{{backend_url}}"],
+          "path": ["pavos", "api", "v1", "leads"]
+        },
+        "description": "Create a new lead in Whop and save to local database"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Get All Leads",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Whop-User-Id",
+            "value": "{{whop_user_id}}"
+          },
+          {
+            "key": "X-Whop-Company-Id",
+            "value": "{{whop_company_id}}"
+          }
+        ],
+        "url": {
+          "raw": "{{backend_url}}/pavos/api/v1/leads?status=new&skip=0&limit=20",
+          "host": ["{{backend_url}}"],
+          "path": ["pavos", "api", "v1", "leads"],
+          "query": [
+            {
+              "key": "status",
+              "value": "new",
+              "disabled": true
+            },
+            {
+              "key": "skip",
+              "value": "0"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            }
+          ]
+        },
+        "description": "Fetch all leads for the company with pagination"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Single Lead",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Whop-User-Id",
+            "value": "{{whop_user_id}}"
+          },
+          {
+            "key": "X-Whop-Company-Id",
+            "value": "{{whop_company_id}}"
+          }
+        ],
+        "url": {
+          "raw": "{{backend_url}}/pavos/api/v1/leads/{{lead_id}}",
+          "host": ["{{backend_url}}"],
+          "path": ["pavos", "api", "v1", "leads", "{{lead_id}}"]
+        },
+        "description": "Get a specific lead by ID (use lead_id from Create Lead response)"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Update Lead Status",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Whop-User-Id",
+            "value": "{{whop_user_id}}"
+          },
+          {
+            "key": "X-Whop-Company-Id",
+            "value": "{{whop_company_id}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"contacted\",\n  \"metadata\": {\n    \"notes\": \"Called customer - discussed pricing\",\n    \"nextFollowUp\": \"2026-01-25\",\n    \"sentiment\": \"positive\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{backend_url}}/pavos/api/v1/leads/{{lead_id}}",
+          "host": ["{{backend_url}}"],
+          "path": ["pavos", "api", "v1", "leads", "{{lead_id}}"]
+        },
+        "description": "Update lead status and metadata"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Delete Lead",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "X-Whop-User-Id",
+            "value": "{{whop_user_id}}"
+          },
+          {
+            "key": "X-Whop-Company-Id",
+            "value": "{{whop_company_id}}"
+          }
+        ],
+        "url": {
+          "raw": "{{backend_url}}/pavos/api/v1/leads/{{lead_id}}",
+          "host": ["{{backend_url}}"],
+          "path": ["pavos", "api", "v1", "leads", "{{lead_id}}"]
+        },
+        "description": "Delete a lead (soft delete or hard delete depending on implementation)"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "backend_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "whop_user_id",
+      "value": "user_test123",
+      "type": "string"
+    },
+    {
+      "key": "whop_company_id",
+      "value": "comp_test456",
+      "type": "string"
+    },
+    {
+      "key": "lead_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

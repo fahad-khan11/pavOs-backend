@@ -1,35 +1,27 @@
-import express from 'express';
-import {
-  getLeads,
-  getLeadById,
-  createLead,
-  updateLead,
-  deleteLead,
-  getLeadStats,
-  sendWhopMessage,
-  getWhopMessages,
-  sendMessage, // ✅ NEW: Smart routing
-} from '../controllers/leadController.js';
+import { Router } from 'express';
 import { authenticate } from '../middlewares/auth.js';
+import { apiLimiter } from '../middlewares/rateLimiter.js';
+import {
+  createLead,
+  getLeads,
+} from '../controllers/leadController.js';
 
-const router = express.Router();
+const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+router.use(apiLimiter);
 
-// Lead routes
-router.get('/', getLeads);
-router.get('/stats', getLeadStats); // Must be before /:id
-router.get('/:id', getLeadById);
-router.post('/', createLead);
-router.patch('/:id', updateLead);
-router.delete('/:id', deleteLead);
+/**
+ * Create a new lead in Whop and save to local DB
+ * POST /pavos/api/v1/leads/create
+ */
+router.post('/create', createLead);
 
-// Whop messaging routes
-router.post('/:id/whop-message', sendWhopMessage);
-router.get('/:id/whop-messages', getWhopMessages);
-
-// ✅ SMART ROUTING: Auto-detect Whop or Discord and send accordingly
-router.post('/:id/send-message', sendMessage);
+/**
+ * Get all leads for company (combined from Whop API + MongoDB)
+ * GET /pavos/api/v1/leads/fetch-all
+ */
+router.get('/fetch-all', getLeads);
 
 export default router;

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { Deal, Contact, Payment, Deliverable, Activity, Lead, User } from '../models/index.js';
+import { Deal, Contact, Payment, Deliverable, Activity, User } from '../models/index.js';
 import { AuthRequest, DashboardStats } from '../types/index.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 
@@ -178,75 +178,58 @@ export const getRevenueChart = async (req: AuthRequest, res: Response): Promise<
 
 /**
  * ✅ REFACTORED: Whop-only authentication
- * Get analytics data for leads/pipeline
+ * Get analytics data for pipeline (based on Deals only)
  * GET /api/v1/dashboard/analytics
  */
 export const getAnalytics = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const whopCompanyId = req.whopCompanyId!;
 
-    // ✅ SECURITY: Get all leads filtered by whopCompanyId
-    const leads = await Lead.find({ whopCompanyId });
-    const wonLeads = leads.filter((l) => l.status === 'won');
-    const lostLeads = leads.filter((l) => l.status === 'lost');
-    const activeLeads = leads.filter((l) => l.status !== 'won' && l.status !== 'lost');
+    // Get all deals filtered by whopCompanyId
+    const deals = await Deal.find({ whopCompanyId });
+    const completedDeals = deals.filter((d) => d.stage === 'Completed');
+    const activeDeals = deals.filter((d) => d.stage !== 'Completed' && d.status === 'active');
 
-    // Get payments (from Whop sync) filtered by whopCompanyId
+    // Get payments filtered by whopCompanyId
     const payments = await Payment.find({
       whopCompanyId,
       paymentStatus: 'paid',
-      method: 'whop'
     });
 
     // Calculate total revenue from payments
     const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
 
-    // Calculate revenue from won leads (actualValue or estimatedValue)
-    const leadRevenue = wonLeads.reduce((sum, l) => sum + (l.actualValue || l.estimatedValue || 0), 0);
+    // Calculate revenue from completed deals
+    const dealRevenue = completedDeals.reduce((sum, d) => sum + d.dealValue, 0);
 
-    // Use the higher of the two (in case payments aren't synced yet)
-    const revenue = Math.max(totalRevenue, leadRevenue);
+    // Use the higher of the two
+    const revenue = Math.max(totalRevenue, dealRevenue);
 
-    // Win rate
-    const closedLeads = wonLeads.length + lostLeads.length;
-    const winRate = closedLeads > 0 ? Math.round((wonLeads.length / closedLeads) * 100) : 0;
-
-    // Active deals (leads in pipeline)
-    const activeDeals = activeLeads.length;
+    // Close rate (completed vs total)
+    const totalDealsCount = deals.length;
+    const closeRate = totalDealsCount > 0 ? Math.round((completedDeals.length / totalDealsCount) * 100) : 0;
 
     // Average deal size
-    const avgDealSize = wonLeads.length > 0
-      ? Math.round(revenue / wonLeads.length)
-      : (activeLeads.length > 0
-        ? Math.round(activeLeads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0) / activeLeads.length)
+    const avgDealSize = completedDeals.length > 0
+      ? Math.round(revenue / completedDeals.length)
+      : (activeDeals.length > 0
+        ? Math.round(activeDeals.reduce((sum, d) => sum + d.dealValue, 0) / activeDeals.length)
         : 0);
 
-    // Lead source breakdown
-    const sourceBreakdown: { [key: string]: { count: number; won: number; revenue: number } } = {};
-    leads.forEach((lead) => {
-      if (!sourceBreakdown[lead.source]) {
-        sourceBreakdown[lead.source] = { count: 0, won: 0, revenue: 0 };
-      }
-      sourceBreakdown[lead.source].count++;
-      if (lead.status === 'won') {
-        sourceBreakdown[lead.source].won++;
-        sourceBreakdown[lead.source].revenue += lead.actualValue || lead.estimatedValue || 0;
-      }
-    });
-
-    // Pipeline breakdown by status
-    const pipelineBreakdown: { [key: string]: { count: number; value: number } } = {
-      new: { count: 0, value: 0 },
-      in_conversation: { count: 0, value: 0 },
-      proposal: { count: 0, value: 0 },
-      negotiation: { count: 0, value: 0 },
-      won: { count: 0, value: 0 },
-      lost: { count: 0, value: 0 },
+    // Stage breakdown
+    const stageBreakdown: { [key: string]: { count: number; value: number } } = {
+      Lead: { count: 0, value: 0 },
+      Contacted: { count: 0, value: 0 },
+      Proposal: { count: 0, value: 0 },
+      Negotiation: { count: 0, value: 0 },
+      Contracted: { count: 0, value: 0 },
+      Completed: { count: 0, value: 0 },
     };
-    leads.forEach((lead) => {
-      if (pipelineBreakdown[lead.status]) {
-        pipelineBreakdown[lead.status].count++;
-        pipelineBreakdown[lead.status].value += lead.actualValue || lead.estimatedValue || 0;
+    
+    deals.forEach((deal) => {
+      if (stageBreakdown[deal.stage]) {
+        stageBreakdown[deal.stage].count++;
+        stageBreakdown[deal.stage].value += deal.dealValue || 0;
       }
     });
 
@@ -258,30 +241,28 @@ export const getAnalytics = async (req: AuthRequest, res: Response): Promise<voi
       const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
       const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
 
-      const monthWonLeads = wonLeads.filter((l) => {
-        const wonDate = l.wonAt || l.updatedAt;
-        return wonDate >= monthStart && wonDate <= monthEnd;
+      const monthDeals = completedDeals.filter((d) => {
+        const completedDate = d.updatedAt;
+        return completedDate >= monthStart && completedDate <= monthEnd;
       });
 
-      const monthRevenue = monthWonLeads.reduce((sum, l) => sum + (l.actualValue || l.estimatedValue || 0), 0);
+      const monthRevenue = monthDeals.reduce((sum, d) => sum + d.dealValue, 0);
 
       monthlyRevenue.push({
         month: monthStart.toLocaleString('default', { month: 'short' }),
         revenue: monthRevenue,
-        deals: monthWonLeads.length,
+        deals: monthDeals.length,
       });
     }
 
     successResponse(res, {
       totalRevenue: revenue,
-      winRate,
-      activeDeals,
+      closeRate,
+      activeDeals: activeDeals.length,
       avgDealSize,
-      totalLeads: leads.length,
-      wonLeads: wonLeads.length,
-      lostLeads: lostLeads.length,
-      sourceBreakdown,
-      pipelineBreakdown,
+      totalDeals: deals.length,
+      completedDeals: completedDeals.length,
+      stageBreakdown,
       monthlyRevenue,
     });
   } catch (error: any) {

@@ -26,7 +26,6 @@ export interface IUser extends Document {
   isEmailVerified?: boolean;
   createdAt: Date;
   lastLogin: Date;
-  refreshTokens: string[];
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -378,39 +377,25 @@ export interface IDiscordMessage extends Document {
 // LEAD TYPES
 // ============================================
 
-export type LeadSource = 'discord' | 'instagram' | 'tiktok' | 'whop' | 'manual' | 'referral';
-export type LeadStatus = 'new' | 'in_conversation' | 'proposal' | 'negotiation' | 'won' | 'lost';
+export type LeadSource = 'whop' | 'manual' | 'referral';
+export type LeadStatus = 'new' | 'contacted' | 'converted' | 'lost';
 
 export interface ILead extends Document {
   id: string;
-  userId: string;  // ⚠️ DEPRECATED: Use whopUserId via user lookup
+  whopLeadId: string;  // ✅ REQUIRED: Unique ID from Whop API
   whopCompanyId: string;  // ✅ REQUIRED: Multi-tenant company isolation
-  contactId?: string;
-  name: string;
+  whopUserId?: string;  // Optional: User who created the lead
   email?: string;
-  phone?: string;
-  discordUserId?: string;
-  discordUsername?: string;
-  discordChannelId?: string;
-  discordInviteSent?: boolean;
-  discordJoinedChannel?: boolean;
-  instagramUsername?: string;
-  tiktokUsername?: string;
-  source: LeadSource;
+  name: string;
+  username?: string;
+  productId?: string;  // Whop product ID
+  productTitle?: string;
+  referrer?: string;  // Referrer URL or source
+  metadata?: Record<string, any>;  // Custom metadata from Whop
+  memberId?: string;  // Whop member ID if they became a customer
   status: LeadStatus;
-  tags: string[];
-  notes: string;
-  lastContactDate?: Date;
-  nextFollowUpDate?: Date;
-  estimatedValue?: number;
-  actualValue?: number;
-  // Whop integration fields
-  whopMembershipId?: string;
-  whopCustomerId?: string;
-  whopSupportChannelId?: string;  // ✅ NEW: Whop DM channel ID
-  lastWhopMessageAt?: Date;  // ✅ NEW: Last message timestamp
-  wonAt?: Date;
-  customFields?: Record<string, any>;
+  whopCreatedAt: Date;  // Created timestamp from Whop
+  whopUpdatedAt: Date;  // Updated timestamp from Whop
   createdAt: Date;
   updatedAt: Date;
 }
