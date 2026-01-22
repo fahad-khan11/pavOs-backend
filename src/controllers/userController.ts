@@ -41,7 +41,6 @@ export const updateCurrentUser = async (req: AuthRequest, res: Response): Promis
     delete updates.email;
     delete updates.password;
     delete updates.role;
-    delete updates.refreshTokens;
     delete updates.whopUserId;
     delete updates.whopCompanyId;
     delete updates.whopRole;

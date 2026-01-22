@@ -1,7 +1,6 @@
 import { Response } from 'express';
 import { User, WhopConnection } from '../models/index.js';
 import { AuthRequest, IUser } from '../types/index.js';
-import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import { TelemetryEvent } from '../models/index.js';
 import { whopService } from '../services/whopService.js';
@@ -51,74 +50,19 @@ export const demoLogin = async (req: AuthRequest, res: Response): Promise<void> 
 /**
  * Logout user
  * POST /api/v1/auth/logout
+ * 
+ * ✅ WHOP-ONLY: Simply clears client-side session data
  */
 export const logout = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { refreshToken } = req.body;
-    const whopUserId = req.whopUserId;
-    const whopCompanyId = req.whopCompanyId;
-
-    if (whopUserId && whopCompanyId && refreshToken) {
-      // ✅ REFACTORED: Find user by Whop identifiers
-      const user = await (User as any).findByWhopIdentifiers(whopUserId, whopCompanyId);
-      if (user) {
-        // Remove refresh token from user
-        await User.findByIdAndUpdate(user._id, {
-          $pull: { refreshTokens: refreshToken },
-        });
-      }
-    }
-
+    // Whop manages session lifecycle - no backend cleanup needed
     successResponse(res, null, 'Logged out successfully');
   } catch (error: any) {
     errorResponse(res, error.message || 'Logout failed', 500);
   }
 };
 
-/**
- * Refresh access token
- * POST /api/v1/auth/refresh
- */
-export const refreshAccessToken = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      errorResponse(res, 'Refresh token is required', 400);
-      return;
-    }
-
-    // Verify refresh token
-    const { verifyRefreshToken } = await import('../utils/jwt.js');
-    const decoded = verifyRefreshToken(refreshToken);
-
-    if (!decoded) {
-      errorResponse(res, 'Invalid or expired refresh token', 401);
-      return;
-    }
-
-    // ✅ REFACTORED: Find user by Whop identifiers
-    const user = await (User as any).findByWhopIdentifiers(decoded.whopUserId, decoded.whopCompanyId);
-    
-    if (!user || !user.refreshTokens.includes(refreshToken)) {
-      errorResponse(res, 'Invalid refresh token', 401);
-      return;
-    }
-
-    // ✅ REFACTORED: Generate new access token with Whop identifiers
-    const accessToken = generateAccessToken({
-      whopUserId: user.whopUserId,
-      whopCompanyId: user.whopCompanyId,
-      email: user.email,
-      whopRole: user.whopRole,
-      _internalUserId: user._id.toString(),
-    });
-
-    successResponse(res, { accessToken });
-  } catch (error: any) {
-    errorResponse(res, error.message || 'Token refresh failed', 500);
-  }
-};
+// Token refresh endpoint removed - Whop handles token lifecycle
 
 /**
  * Google OAuth callback handler
@@ -312,7 +256,6 @@ export default {
   login,
   demoLogin,
   logout,
-  refreshAccessToken,
   googleCallback,
   whopAuth,
 };
