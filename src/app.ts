@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import membersRoutes from "./modules/members/members.routes";
+import paymentsRoutes from "./modules/payments/payments.routes";
 import { errorHandler } from "./middlewares/errorHandler";
 
 
@@ -12,7 +13,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(morgan("dev"));
 
 app.get("/health", (req, res) => res.json({ ok: true }));
-
+app.use("/api/v1/payments", paymentsRoutes);
 app.use("/api/v1/members", membersRoutes);
 
 app.use(errorHandler);
