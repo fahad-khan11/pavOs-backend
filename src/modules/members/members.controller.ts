@@ -24,7 +24,7 @@ type DashboardMember = {
 };
 
 export const MembersController = {
-  async list(req: Request, res: Response, next: NextFunction) {
+  async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const parsed = listSchema.parse({
         ...req.query,
@@ -33,7 +33,8 @@ export const MembersController = {
 
       // Ensure user is only querying the company in their Whop context
       if (parsed.company_id !== req.whop!.companyId) {
-        return res.status(403).json({ error: "company_id mismatch with Whop context." });
+        res.status(403).json({ error: "company_id mismatch with Whop context." });
+        return;
       }
 
       // Whop page response: { data: [...], page_info: {...} }
@@ -77,7 +78,7 @@ export const MembersController = {
       );
 
       // ---- 3) Send clean response to frontend ----
-      return res.json({
+      res.json({
         stats: {
           total_members,
           active_members,
@@ -93,7 +94,7 @@ export const MembersController = {
     }
   },
 
-  async retrieve(req: Request, res: Response, next: NextFunction) {
+  async retrieve(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const member = await MembersService.retrieveMember(req.params.id);
       const m: any = member;
@@ -128,7 +129,7 @@ export const MembersController = {
         },
       };
   
-      return res.json(response);
+      res.json(response);
     } catch (err) {
       next(err);
     }

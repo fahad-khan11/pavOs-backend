@@ -4,9 +4,9 @@ import type { ListMembersQuery } from "./members.types";
 
 export const MembersService = {
   async listMembers(params: ListMembersQuery) {
-    const page = await whopClient.members.list(params);
+    const page = await whopClient.members.list(params as any);
 
-    // Optional analytics snapshot (don’t block response)
+    // Optional analytics snapshot (don't block response)
     void saveSnapshots(page.data as any[], params.company_id);
 
     return page;

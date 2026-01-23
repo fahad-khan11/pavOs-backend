@@ -23,12 +23,12 @@ export const PaymentsService = {
     // If SDK returns an async iterable, return first page only
     if (isAsyncIterable(result)) {
       for await (const page of result) {
-        return page as PaymentsPage;
+        return page as unknown as PaymentsPage;
       }
       return { data: [], page_info: { has_next_page: false, has_previous_page: false } };
     }
 
-    return result as PaymentsPage;
+    return result as unknown as PaymentsPage;
   },
 
   async retrievePayment(paymentId: string) {
