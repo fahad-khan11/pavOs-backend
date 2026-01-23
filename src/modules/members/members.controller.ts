@@ -42,7 +42,7 @@ export const MembersController = {
       const membersRaw = (page as any)?.data ?? [];
       const page_info = (page as any)?.page_info ?? null;
 
-      // ---- 1) Build "members" array for UI ----
+      // ---- 1) Build "members" array for 
       const members: DashboardMember[] = membersRaw.map((m: any) => {
         const name =
           (m?.user?.name && String(m.user.name).trim()) ||
