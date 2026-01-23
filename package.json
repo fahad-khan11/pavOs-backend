@@ -2,30 +2,24 @@
   "name": "paveos-be",
   "version": "1.0.0",
   "description": "PaveOS Backend - CRM and automation app for creators",
-  "type": "module",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc && tsc-alias",
     "start": "node dist/server.js",
-    "seed": "ts-node --esm scripts/seedDemo.ts",
-    "seed:templates": "ts-node --esm src/scripts/seedTemplates.ts",
-    "create-demo": "ts-node --esm scripts/createDemoUser.ts",
-    "test:threads": "ts-node --esm scripts/testThreadImplementation.ts",
-    "test:reconnect": "ts-node --esm scripts/testReconnectFix.ts",
-    "fix-stale-connections": "ts-node --esm scripts/fixStaleConnections.ts",
-    "cleanup-test-data": "ts-node --esm scripts/cleanupTestData.ts",
+    "seed": "ts-node scripts/seedDemo.ts",
+    "seed:templates": "ts-node src/scripts/seedTemplates.ts",
+    "create-demo": "ts-node scripts/createDemoUser.ts",
+    "test:threads": "ts-node scripts/testThreadImplementation.ts",
+    "test:reconnect": "ts-node scripts/testReconnectFix.ts",
+    "fix-stale-connections": "ts-node scripts/fixStaleConnections.ts",
+    "cleanup-test-data": "ts-node scripts/cleanupTestData.ts",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write \"src/**/*.{ts,js,Fjson}\"",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "test": "jest --coverage",
     "test:watch": "jest --watch"
   },
-  "keywords": [
-    "crm",
-    "whop",
-    "stripe",
-    "automation"
-  ],
+  "keywords": ["crm", "whop", "stripe", "automation"],
   "author": "PaveOS Team",
   "license": "MIT",
   "dependencies": {
@@ -93,7 +87,7 @@
     "tsx": "^4.20.6"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": "20.x",
+    "npm": "10.x"
   }
 }
