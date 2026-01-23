@@ -16,7 +16,7 @@
     "fix-stale-connections": "ts-node --esm scripts/fixStaleConnections.ts",
     "cleanup-test-data": "ts-node --esm scripts/cleanupTestData.ts",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format": "prettier --write \"src/**/*.{ts,js,Fjson}\"",
     "test": "jest --coverage",
     "test:watch": "jest --watch"
   },
@@ -71,7 +71,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.7",
-    "@types/morgan": "^1.9.9",
+    "@types/morgan": "^1.9.10",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.5",
     "@types/node-cron": "^3.0.11",
