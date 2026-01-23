@@ -60,6 +60,8 @@
     "passport-google-oauth20": "^2.0.0",
     "socket.io": "^4.8.1",
     "stripe": "^17.6.0",
+    "tsc-alias": "^1.8.16",
+    "typescript": "^5.9.3",
     "uuid": "^11.0.4",
     "winston": "^3.17.0",
     "zod": "^4.3.5"
@@ -87,10 +89,8 @@
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
-    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "tsx": "^4.20.6"
   },
   "engines": {
     "node": ">=18.0.0",
