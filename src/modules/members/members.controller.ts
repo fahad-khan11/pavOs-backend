@@ -96,28 +96,41 @@ export const MembersController = {
   async retrieve(req: Request, res: Response, next: NextFunction) {
     try {
       const member = await MembersService.retrieveMember(req.params.id);
-
-      // Optional: normalize single member too (so frontend can reuse same UI logic)
       const m: any = member;
-
-      const normalized = {
+  
+      const response = {
         id: m.id,
-        name:
-          (m?.user?.name && String(m.user.name).trim()) ||
-          (m?.user?.username && String(m.user.username).trim()) ||
-          "Unknown User",
-        email: m?.user?.email ?? null,
-        status: m?.status ?? null,
-        access_level: m?.access_level ?? null,
-        joined_at: m?.joined_at ?? null,
-        last_action: m?.most_recent_action ?? null,
-        last_action_at: m?.most_recent_action_at ?? null,
-        total_spent_usd: Number(m?.usd_total_spent ?? 0),
+        created_at: m.created_at ?? null,
+        updated_at: m.updated_at ?? null,
+        joined_at: m.joined_at ?? null,
+  
+        access_level: m.access_level ?? "no_access",
+        status: m.status ?? null,
+  
+        most_recent_action: m.most_recent_action ?? null,
+        most_recent_action_at: m.most_recent_action_at ?? null,
+  
+        user: {
+          id: m?.user?.id ?? null,
+          email: m?.user?.email ?? null,
+          name: m?.user?.name ?? null,
+          username: m?.user?.username ?? null,
+        },
+  
+        phone: m?.phone ?? null,
+  
+        usd_total_spent: Number(m?.usd_total_spent ?? 0),
+  
+        company: {
+          id: req.whop!.companyId, // always safe from Whop context
+          title: m?.company?.title ?? null,
+          route: m?.company?.route ?? null,
+        },
       };
-
-      res.json(normalized);
+  
+      return res.json(response);
     } catch (err) {
       next(err);
     }
-  },
+  },  
 };
