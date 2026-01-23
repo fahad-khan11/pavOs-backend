@@ -30,7 +30,7 @@
   "license": "MIT",
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
-    "@discordjs/rest": "^2.6.0",
+    "@discordjs/rest": "^0.4.1",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.17",
     "@whop/sdk": "^0.0.8",
@@ -42,7 +42,7 @@
     "csv-parser": "^3.0.0",
     "date-fns": "^4.1.0",
     "discord-oauth2": "^2.12.1",
-    "discord.js": "^14.24.2",
+    "discord.js": "^13.17.1",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "express-async-errors": "^3.1.1",
