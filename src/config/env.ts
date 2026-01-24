@@ -12,4 +12,5 @@ export const ENV = {
   WHOP_API_KEY: must("WHOP_API_KEY"),
   WHOP_APP_ID: process.env.WHOP_APP_ID || undefined,
   WHOP_COMPANY_ID: process.env.WHOP_COMPANY_ID || undefined,
+  SELLER_ACCESS_PASS_ID: process.env.SELLER_ACCESS_PASS_ID || undefined,
 };
