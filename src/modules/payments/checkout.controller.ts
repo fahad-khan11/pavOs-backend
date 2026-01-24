@@ -13,7 +13,7 @@ const createCheckoutSchema = z.object({
   billing_period: z.number().int().positive().optional(), // Days (30, 365, etc.)
 }).refine(
   (data) => {
-    // If plan_type is renewal, product_id, renewal_price, and billing_period are required
+    // If plan_type is renewal, product_id, renewal_price,....... and billing_period are required
     if (data.plan_type === "renewal") {
       if (!data.product_id) return false;
       if (!data.renewal_price) return false;
