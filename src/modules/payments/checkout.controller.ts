@@ -37,20 +37,8 @@ export const CheckoutController = {
     try {
       const body = createCheckoutSchema.parse(req.body);
       
-      // Get company ID from Whop context or fallback to ENV
-      const company_id = req.whop?.companyId || ENV.WHOP_COMPANY_ID;
-      
-      if (!company_id) {
-        res.status(400).json({
-          error: "Company ID is required. Set WHOP_COMPANY_ID in .env or provide x-whop-company-id header.",
-        });
-        return;
-      }
-
-      const checkoutConfig = await CheckoutService.createCheckoutConfig({
-        company_id,
-        ...body,
-      });
+      // No need for company_id - service uses seller company from ENV
+      const checkoutConfig = await CheckoutService.createCheckoutConfig(body);
 
       res.json({
         success: true,
