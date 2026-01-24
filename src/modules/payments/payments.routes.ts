@@ -13,9 +13,11 @@ router.get("/", requireWhopContext, requireWhopAccess, PaymentsController.list);
 router.get("/:id", requireWhopContext, requireWhopAccess, PaymentsController.retrieve);
 
 // ✅ Create checkout configuration (embedded checkout)
-router.post("/checkout/create", requireWhopContext, requireWhopAccess, CheckoutController.createCheckout);
+// No access check needed - users can purchase even without existing access
+router.post("/checkout/create", requireWhopContext, CheckoutController.createCheckout);
 
 // ✅ Verify payment after checkout (without webhooks)
-router.post("/checkout/verify", requireWhopContext, requireWhopAccess, CheckoutController.verifyPayment);
+// No access check needed - verifying a payment they just made
+router.post("/checkout/verify", requireWhopContext, CheckoutController.verifyPayment);
 
 export default router;
