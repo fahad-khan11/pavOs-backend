@@ -11,4 +11,5 @@ export const ENV = {
   MONGO_URI: must("MONGO_URI"),
   WHOP_API_KEY: must("WHOP_API_KEY"),
   WHOP_APP_ID: process.env.WHOP_APP_ID || undefined,
+  WHOP_COMPANY_ID: process.env.WHOP_COMPANY_ID || undefined,
 };
