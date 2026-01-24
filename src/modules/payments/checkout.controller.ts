@@ -5,7 +5,7 @@ import { ENV } from "../../config/env";
 
 const createCheckoutSchema = z.object({
   plan_type: z.enum(["one_time", "renewal"]),
-  initial_price: z.number().positive(),
+  initial_price: z.number().min(0), // Allow 0 for renewal plans with no setup fee
   renewal_price: z.number().positive().optional(),
   currency: z.string().optional().default("usd"),
   metadata: z.record(z.string(), z.any()).optional(),
