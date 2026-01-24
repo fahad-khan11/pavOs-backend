@@ -18,6 +18,7 @@ export async function requireWhopAccess(req: Request, res: Response, next: NextF
     req.whop!.access = access;
     next();
   } catch (err) {
+    console.error("Error checking user access:.........", err);
     next(err);
   }
 }
